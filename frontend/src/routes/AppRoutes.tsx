@@ -5,7 +5,7 @@ import { DashboardPage } from '../pages/dashboard/DashboardPage';
 import { ResourceListPage } from '../pages/resources/ResourceListPage';
 import { ResourceDetailPage } from '../pages/resources/ResourceDetailPage';
 
-// Operations & Governance Placeholder Pages
+// Operations & Governance Pages
 import { AssignmentsPage } from '../pages/assignments/AssignmentsPage';
 import { RequisitionsPage } from '../pages/requisitions/RequisitionsPage';
 import { ReturnsPage } from '../pages/returns/ReturnsPage';
@@ -17,6 +17,7 @@ import { ApprovalsPage } from '../pages/approvals/ApprovalsPage';
 import { ReportsPage } from '../pages/reports/ReportsPage';
 import { NotificationsPage } from '../pages/notifications/NotificationsPage';
 import { SettingsPage } from '../pages/settings/SettingsPage';
+import { ProfilePage } from '../pages/profile/ProfilePage';
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -39,6 +40,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="reports" element={<ReportsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="profile" element={<ProfilePage />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

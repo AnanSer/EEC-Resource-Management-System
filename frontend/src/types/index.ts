@@ -59,6 +59,21 @@ export interface Employee {
   hireDate: string;
 }
 
+export interface UserApproval {
+  id: string;
+  name: string;
+  email: string;
+  departmentId: string;
+  departmentName: string;
+  designation: string;
+  requestedRole: UserRole;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejectionReason?: string;
+  createdAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
 // Category-specific extension specifications
 export interface ITSpecs {
   serialNumber: string;
@@ -84,7 +99,7 @@ export interface VehicleSpecs {
   currentMileageKm: number;
   lastServiceKm: number;
   insuranceExpiry: string;
-  boloInspectionExpiry: string; // Ethiopian annual roadworthiness
+  boloInspectionExpiry: string; // Ethiopian annual roadworthiness inspection
 }
 
 export interface HeavyMachinerySpecs {
@@ -146,6 +161,7 @@ export interface AssetAssignment {
   resourceCode: string;
   employeeId: string;
   employeeName: string;
+  departmentId: string;
   departmentName: string;
   assignedBy: string;
   assignedAt: string;
@@ -154,7 +170,65 @@ export interface AssetAssignment {
   purpose: string;
   conditionOnAssignment: ResourceCondition;
   conditionOnReturn?: ResourceCondition;
-  status: 'ACTIVE' | 'RETURNED' | 'OVERDUE';
+  isCurrent: boolean;
+  status: 'ACTIVE' | 'RETURNED' | 'TRANSFERRED' | 'OVERDUE';
+}
+
+export type RequisitionStatus = 
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'FULFILLED'
+  | 'CANCELLED';
+
+export interface ResourceRequisition {
+  id: string;
+  requisitionNumber: string; // e.g. REQ-2026-0042
+  requesterId: string;
+  requesterName: string;
+  requesterRole: UserRole;
+  departmentId: string;
+  departmentName: string;
+  category: ResourceCategory;
+  itemDescription: string;
+  justification: string;
+  urgency: 'ROUTINE' | 'URGENT' | 'EMERGENCY_PROJECT';
+  status: RequisitionStatus;
+  requiredDate: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  fulfilledResourceId?: string;
+  fulfilledResourceName?: string;
+  fulfilledResourceCode?: string;
+  fulfilledAt?: string;
+  fulfilledBy?: string;
+  handoverNotes?: string;
+  createdAt: string;
+}
+
+export type ReturnType = 'SCHEDULED' | 'WALK_IN';
+export type ReturnStatus = 'PENDING' | 'RECEIVED' | 'CANCELLED';
+
+export interface AssetReturnRecord {
+  id: string;
+  returnNumber: string; // e.g. RET-2026-0018
+  type: ReturnType;
+  resourceId: string;
+  resourceName: string;
+  resourceCode: string;
+  assignmentId: string;
+  employeeId: string;
+  employeeName: string;
+  departmentName: string;
+  status: ReturnStatus;
+  reason: string;
+  conditionOnReturn?: ResourceCondition;
+  returnLocation?: string;
+  receivedBy?: string;
+  receivedAt?: string;
+  handoverNotes?: string;
+  createdAt: string;
 }
 
 export interface MaintenanceTicket {
@@ -167,28 +241,33 @@ export interface MaintenanceTicket {
   title: string;
   description: string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  status: 'OPEN' | 'IN_PROGRESS' | 'WAITING_PARTS' | 'COMPLETED' | 'CANCELLED';
+  status: 'OPEN' | 'IN_PROGRESS' | 'TESTING' | 'COMPLETED' | 'CANCELLED';
   reportedBy: string;
   assignedTechnician?: string;
   estimatedCostETB?: number;
   actualCostETB?: number;
-  createdAt: string;
+  startDate?: string;
   completedAt?: string;
   serviceProvider?: string;
+  findings?: string;
+  createdAt: string;
 }
 
 export interface InspectionTest {
   id: string;
+  ticketId?: string; // Links to Maintenance ticket if QA test
   resourceId: string;
   resourceName: string;
   resourceCode: string;
-  inspectionType: 'CALIBRATION' | 'ROADWORTHINESS_BOLO' | 'HYDRAUKIC' | 'SAFETY_AUDIT';
+  inspectionType: 'CALIBRATION' | 'ROADWORTHINESS_BOLO' | 'HYDRAULIC' | 'SAFETY_AUDIT' | 'MAINTENANCE_QA';
   passed: boolean;
+  findings: string;
   conductedBy: string;
   certificationNumber?: string;
-  expiryDate: string;
+  expiryDate?: string;
   remarks: string;
   date: string;
+  createdAt: string;
 }
 
 export interface NotificationItem {

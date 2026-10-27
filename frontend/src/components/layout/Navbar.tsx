@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { UserRole } from '../../types';
+import { Link } from 'react-router-dom';
 import { 
   Bell, 
   Search, 
@@ -104,14 +105,22 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
           )}
         </div>
 
-        {/* Notifications Icon */}
-        <button className="relative p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors">
+        {/* Notifications Link */}
+        <Link 
+          to="/notifications" 
+          className="relative p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors"
+          title="Notifications"
+        >
           <Bell className="w-4 h-4" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-amber-500 rounded-full"></span>
-        </button>
+        </Link>
 
-        {/* User Card */}
-        <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+        {/* User Profile Link */}
+        <Link 
+          to="/profile"
+          className="flex items-center gap-2 pl-2 border-l border-slate-200 hover:opacity-85 transition-opacity"
+          title="View profile & custody"
+        >
           <div className="w-8 h-8 rounded-full bg-eec-primary text-white flex items-center justify-center font-bold text-xs shadow-sm">
             {currentUser.name.split(' ').map(n => n[0]).join('')}
           </div>
@@ -119,7 +128,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
             <p className="text-xs font-bold text-slate-900 leading-none">{currentUser.name}</p>
             <p className="text-[10px] text-slate-400 mt-0.5 leading-none">{currentUser.designation}</p>
           </div>
-        </div>
+        </Link>
       </div>
     </header>
   );

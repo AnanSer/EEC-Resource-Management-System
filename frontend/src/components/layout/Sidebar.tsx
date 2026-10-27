@@ -16,6 +16,7 @@ import {
   FileBarChart, 
   Bell, 
   Settings,
+  UserCheck,
   ChevronLeft,
   ChevronRight,
   Shield
@@ -48,6 +49,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Reports & Audits', path: '/reports', icon: FileBarChart, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'DEPARTMENT_MANAGER'] },
   { name: 'Notifications', path: '/notifications', icon: Bell, badge: '3', allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
   { name: 'Settings', path: '/settings', icon: Settings, allowedRoles: ['ADMIN'] },
+  { name: 'My Profile', path: '/profile', icon: UserCheck, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
@@ -66,25 +68,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
         <EECLogo collapsed={collapsed} />
         <button
           onClick={onToggle}
-          className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors hidden md:block"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors hidden md:block"
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
       </div>
 
-      {/* Navigation List */}
-      <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-        <div className="px-3 pb-2">
-          {!collapsed ? (
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Operations & Inventory
-            </span>
-          ) : (
-            <div className="h-2 border-b border-slate-200/50 mb-2"></div>
-          )}
-        </div>
-
+      {/* Nav List */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {filteredItems.map((item) => {
           const Icon = item.icon;
           return (
