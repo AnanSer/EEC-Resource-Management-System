@@ -1,9 +1,37 @@
-import { ResourceRequisition } from '../types';
+import { ResourceRequisition, UserRole } from '../types';
 import { mockStore } from '../mock/store';
 
+export interface ScopeContext {
+  role: UserRole;
+  departmentId?: string;
+  userId?: string;
+  employeeId?: string;
+}
+
+/**
+ * Service for Resource Requisitions and Approval workflows.
+ * 
+ * SECURITY & PERMISSIONS ARCHITECTURE:
+ * - ADMIN: Corporation-wide approval authority across all directorates.
+ * - STORE_KEEPER: Corporation-wide physical fulfillment and asset dispatch.
+ * - DEPARTMENT_MANAGER: Scoped to requisitions submitted by staff within their department.
+ * - EMPLOYEE: Strictly personal requisitions.
+ * 
+ * IMPORTANT BACKEND REQUIREMENT:
+ * Production backend must validate requester department on submission and restrict approval endpoints to ADMIN.
+ */
 export const requisitionService = {
-  async getAll(): Promise<ResourceRequisition[]> {
-    return mockStore.getRequisitions();
+  async getAll(scope?: ScopeContext): Promise<ResourceRequisition[]> {
+    const reqs = await mockStore.getRequisitions();
+    if (!scope) return reqs;
+
+    if (scope.role === 'EMPLOYEE') {
+      return reqs.filter(r => r.requesterId === scope.userId || r.requesterId === scope.employeeId);
+    }
+    if (scope.role === 'DEPARTMENT_MANAGER' && scope.departmentId) {
+      return reqs.filter(r => r.departmentId === scope.departmentId);
+    }
+    return reqs;
   },
 
   async submit(payload: {

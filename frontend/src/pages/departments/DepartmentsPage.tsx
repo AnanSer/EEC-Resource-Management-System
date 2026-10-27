@@ -1,19 +1,20 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { departmentService } from '../../services/departmentService';
 import { Department } from '../../types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Modal } from '../../components/ui/Modal';
 import { 
-   
   Plus, 
   Users, 
   Layers, 
   MapPin, 
   Check, 
-   
+  Building2
 } from 'lucide-react';
 
 export const DepartmentsPage: React.FC = () => {
+  const { currentUser, currentRole } = useAuth();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,10 +27,14 @@ export const DepartmentsPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const isAdmin = currentRole === 'ADMIN';
+  const isDepartmentManager = currentRole === 'DEPARTMENT_MANAGER';
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const list = await departmentService.getAll();
+      const scope = { role: currentRole, departmentId: currentUser.departmentId };
+      const list = await departmentService.getAll(scope);
       setDepartments(list);
     } catch (err) {
       console.error(err);
@@ -40,64 +45,79 @@ export const DepartmentsPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentRole, currentUser]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      // Direct store add
       const { mockStore } = await import('../../mock/store');
       await mockStore.addDepartment({
         name,
-        code: code.toUpperCase(),
+        code,
         description,
         managerName,
         location,
-        employeeCount: 1,
+        employeeCount: 0,
         assetCount: 0,
         budgetCode
       });
+
+      setToastMessage(`Directorate '${name}' created successfully.`);
       setIsModalOpen(false);
       setName('');
       setCode('');
       setDescription('');
-      setManagerName('');
-      setToastMessage('New engineering department established');
-      setTimeout(() => setToastMessage(null), 3500);
       loadData();
-    } catch (err: any) {
-      alert(err.message || 'Creation failed');
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (err) {
+      console.error(err);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-slideUp">
-          <Check className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs font-semibold">{toastMessage}</span>
+    <div className="space-y-6 animate-fadeIn pb-12">
+      <PageHeader
+        title="Corporation Directorates & Field Offices"
+        subtitle={
+          isDepartmentManager
+            ? `Operational profile and resource allocations for ${currentUser.departmentName || 'your directorate'}`
+            : "Organizational structural hierarchy, cost centers, and departmental resource allocations"
+        }
+      >
+        {isAdmin && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Directorate</span>
+          </button>
+        )}
+      </PageHeader>
+
+      {isDepartmentManager && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200/80 rounded-2xl flex items-center justify-between text-xs text-emerald-950 shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <Building2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
+            <span>
+              <strong>Department Scope:</strong> Displaying your designated operational unit. Corporate structural changes require System Administrator authority.
+            </span>
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            Directorate Profile
+          </span>
         </div>
       )}
 
-      <PageHeader
-        title="EEC Engineering Directorates & Offices"
-        subtitle="Manage corporate directorates, capital asset pools, and regional project offices"
-        breadcrumbs={[
-          { label: 'RMS', href: '/dashboard' },
-          { label: 'Departments' }
-        ]}
-      >
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl font-bold text-xs transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Add Directorate
-        </button>
-      </PageHeader>
+      {toastMessage && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 animate-fadeIn">
+          <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center min-h-[300px]">
@@ -111,41 +131,44 @@ export const DepartmentsPage: React.FC = () => {
               className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-card hover:shadow-md transition-all flex flex-col justify-between"
             >
               <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="px-2.5 py-1 bg-eec-primary/10 text-eec-primary font-mono text-xs font-bold rounded-lg border border-eec-primary/15">
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <h3 className="font-bold text-slate-900 text-sm leading-snug">{dept.name}</h3>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-slate-100 text-slate-700 border border-slate-200 flex-shrink-0">
                     {dept.code}
                   </span>
-                  <span className="text-[11px] font-mono text-slate-400 font-medium">
-                    {dept.budgetCode || 'NO-BUDGET'}
-                  </span>
                 </div>
+                <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-4">
+                  {dept.description}
+                </p>
 
-                <h3 className="font-bold text-slate-900 text-sm">{dept.name}</h3>
-                <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">{dept.description}</p>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 space-y-2 text-xs text-slate-600">
+                <div className="space-y-1.5 text-xs text-slate-600 pt-3 border-t border-slate-100">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Director / Manager:</span>
-                    <span className="font-bold text-slate-800">{dept.managerName || 'Acting Officer'}</span>
+                    <span className="text-slate-400">Director:</span>
+                    <span className="font-semibold text-slate-800">{dept.managerName || 'Pending Appointment'}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-400">Location:</span>
-                    <span className="text-slate-700 flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-slate-400" />
-                      {dept.location}
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <MapPin className="w-3 h-3" /> Location:
                     </span>
+                    <span className="truncate max-w-[160px] text-right font-medium">{dept.location}</span>
                   </div>
+                  {dept.budgetCode && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Budget Code:</span>
+                      <span className="font-mono text-[11px] font-semibold text-slate-700">{dept.budgetCode}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-1.5 text-slate-600 font-semibold">
-                  <Users className="w-3.5 h-3.5 text-slate-400" />
-                  {dept.employeeCount} Personnel
+                  <Users className="w-4 h-4 text-slate-400" />
+                  <span>{dept.employeeCount} Personnel</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-eec-primary font-bold">
-                  <Layers className="w-3.5 h-3.5 text-eec-accent" />
-                  {dept.assetCount} Assets
+                  <Layers className="w-4 h-4" />
+                  <span>{dept.assetCount} Allocated</span>
                 </div>
               </div>
             </div>
@@ -153,101 +176,102 @@ export const DepartmentsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Add Department Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title="Add New Engineering Directorate"
-        subtitle="Establish a new department within the EEC corporate organizational chart"
-      >
-        <form onSubmit={handleCreate} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* New Directorate Modal (Admin Only) */}
+      {isAdmin && (
+        <Modal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          title="Create New Corporate Directorate"
+          subtitle="Define a corporate organizational division and budget center"
+        >
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Directorate Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Geotechnical Engineering"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Corporate Code *</label>
+                <input
+                  type="text"
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. EEC-GEO"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-mono focus:outline-none"
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Directorate Name *</label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Railway Engineering & Transit"
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Mandate & Description</label>
+              <textarea
+                rows={2}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Scope of work and responsibilities..."
                 className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Department Code *</label>
-              <input
-                type="text"
-                required
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="e.g. RET"
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none uppercase font-mono"
-              />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Designated Director</label>
+                <input
+                  type="text"
+                  value={managerName}
+                  onChange={(e) => setManagerName(e.target.value)}
+                  placeholder="e.g. Dr. Kassahun Tadesse"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Budget Cost Center</label>
+                <input
+                  type="text"
+                  value={budgetCode}
+                  onChange={(e) => setBudgetCode(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-mono focus:outline-none"
+                />
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Description</label>
-            <textarea
-              rows={2}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Primary engineering scope and project mandates"
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Director / Manager</label>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Primary Operating Location</label>
               <input
                 type="text"
-                value={managerName}
-                onChange={(e) => setManagerName(e.target.value)}
-                placeholder="e.g. Eng. Yohannes Tadesse"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
               />
             </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Budget Code</label>
-              <input
-                type="text"
-                value={budgetCode}
-                onChange={(e) => setBudgetCode(e.target.value)}
-                placeholder="e.g. BUD2026-RET1"
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none font-mono"
-              />
+
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm"
+              >
+                {saving ? 'Creating...' : 'Create Directorate'}
+              </button>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Headquarters / Annex Location</label>
-            <input
-              type="text"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
-            />
-          </div>
-
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm"
-            >
-              {saving ? 'Creating...' : 'Save Directorate'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 };

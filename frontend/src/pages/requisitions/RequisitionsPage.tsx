@@ -52,8 +52,9 @@ export const RequisitionsPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
+      const scope = { role: currentRole, departmentId: currentUser.departmentId, userId: currentUser.id, employeeId: currentUser.employeeId };
       const [reqs, res] = await Promise.all([
-        requisitionService.getAll(),
+        requisitionService.getAll(scope),
         resourceService.getAll()
       ]);
       setRequisitions(reqs);

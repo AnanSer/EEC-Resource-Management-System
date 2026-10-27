@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Production TypeScript build output
+dist/
+
+# Environment files (never commit real credentials)
+.env
+.env.local
+.env.*.local
+
+# Database, SQLite & Local dev files
+*.sqlite
+*.sqlite3
+prisma/*.db
+prisma/*.db-journal
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log

@@ -1,20 +1,21 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { employeeService } from '../../services/employeeService';
 import { departmentService } from '../../services/departmentService';
 import { Employee, Department, UserRole } from '../../types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Modal } from '../../components/ui/Modal';
 import { 
-   
   Plus, 
   Search, 
   Mail, 
   Phone, 
   Building2, 
-  Check, 
-  } from 'lucide-react';
+  Check
+} from 'lucide-react';
 
 export const EmployeesPage: React.FC = () => {
+  const { currentUser, currentRole } = useAuth();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,17 +30,20 @@ export const EmployeesPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const isDepartmentManager = currentRole === 'DEPARTMENT_MANAGER';
+
   const loadData = async () => {
     setLoading(true);
     try {
+      const scope = { role: currentRole, departmentId: currentUser.departmentId };
       const [eList, dList] = await Promise.all([
-        employeeService.getAll(),
-        departmentService.getAll()
+        employeeService.getAll(scope),
+        departmentService.getAll(scope)
       ]);
       setEmployees(eList);
       setDepartments(dList);
       if (dList.length > 0 && !departmentId) {
-        setDepartmentId(dList[0].id);
+        setDepartmentId(isDepartmentManager ? currentUser.departmentId : dList[0].id);
       }
     } catch (err) {
       console.error(err);
@@ -50,80 +54,97 @@ export const EmployeesPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [currentRole, currentUser]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const dept = departments.find(d => d.id === departmentId);
-      const { mockStore } = await import('../../mock/store');
-      await mockStore.addEmployee({
-        employeeId: 'EEC-EMP-' + Math.floor(400 + Math.random() * 500),
+      const targetDeptId = isDepartmentManager ? currentUser.departmentId : departmentId;
+      const dept = departments.find(d => d.id === targetDeptId);
+      await employeeService.addEmployee({
+        employeeId: `EEC-EMP-${Math.floor(100 + Math.random() * 900)}`,
         name,
         email,
         phone,
-        departmentId,
-        departmentName: dept?.name || 'EEC Directorate',
+        departmentId: targetDeptId,
+        departmentName: dept?.name || currentUser.departmentName || 'Engineering Directorate',
         designation,
         role,
         isActive: true,
         hireDate: new Date().toISOString().split('T')[0]
       });
+
+      setToastMessage(`Successfully registered ${name} into the corporate directory.`);
       setIsModalOpen(false);
       setName('');
       setEmail('');
       setDesignation('');
-      setToastMessage('Employee profile created successfully');
-      setTimeout(() => setToastMessage(null), 3500);
       loadData();
-    } catch (err: any) {
-      alert(err.message || 'Creation failed');
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (err) {
+      console.error(err);
     } finally {
       setSaving(false);
     }
   };
 
-  const filteredEmployees = employees.filter(e => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      e.name.toLowerCase().includes(q) ||
-      e.email.toLowerCase().includes(q) ||
-      e.employeeId.toLowerCase().includes(q) ||
-      e.designation.toLowerCase().includes(q) ||
-      (e.departmentName && e.departmentName.toLowerCase().includes(q))
-    );
-  });
+  const filteredEmployees = employees.filter(emp =>
+    emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    emp.employeeId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    emp.designation.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-slate-700 animate-slideUp">
-          <Check className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs font-semibold">{toastMessage}</span>
-        </div>
-      )}
-
+    <div className="space-y-6 animate-fadeIn pb-12">
       <PageHeader
-        title="Staff Directory & Engineering Personnel"
-        subtitle="Active corporation employees, roles, departmental assignments, and contact channels"
-        breadcrumbs={[
-          { label: 'RMS', href: '/dashboard' },
-          { label: 'Staff Directory' }
-        ]}
+        title="Personnel & Engineering Staff Directory"
+        subtitle={
+          isDepartmentManager
+            ? `Department personnel roster for ${currentUser.departmentName || 'your directorate'}`
+            : "Authorized corporate personnel, roles, contact profiles, and departmental assignments"
+        }
       >
         <button
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl font-bold text-xs transition-colors shadow-sm"
+          onClick={() => {
+            if (isDepartmentManager) {
+              setDepartmentId(currentUser.departmentId);
+            }
+            setIsModalOpen(true);
+          }}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
         >
           <Plus className="w-4 h-4" />
-          Add Employee
+          <span>Register Staff Member</span>
         </button>
       </PageHeader>
 
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
+      {/* Department-Scope Notice Banner for Department Managers */}
+      {isDepartmentManager && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200/80 rounded-2xl flex items-center justify-between text-xs text-emerald-950 shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <Building2 className="w-4 h-4 text-emerald-700 flex-shrink-0" />
+            <span>
+              <strong>Department Scope Active:</strong> Viewing personnel belonging exclusively to{' '}
+              <strong className="underline decoration-emerald-500 underline-offset-2">{currentUser.departmentName}</strong>.
+            </span>
+          </div>
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            Scoped to Directorate
+          </span>
+        </div>
+      )}
+
+      {toastMessage && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 animate-fadeIn">
+          <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Search & Statistics Filter Bar */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="relative w-full sm:max-w-md">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -134,7 +155,7 @@ export const EmployeesPage: React.FC = () => {
           />
         </div>
         <div className="text-xs text-slate-500 font-medium">
-          Showing {filteredEmployees.length} personnel
+          Showing {filteredEmployees.length} personnel {isDepartmentManager ? 'in your department' : 'across corporation'}
         </div>
       </div>
 
@@ -231,15 +252,22 @@ export const EmployeesPage: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Directorate / Office *</label>
-              <select
-                value={departmentId}
-                onChange={(e) => setDepartmentId(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
-              >
-                {departments.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
+              {isDepartmentManager ? (
+                <div className="w-full px-3 py-2 text-xs bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-700 flex items-center justify-between">
+                  <span>{currentUser.departmentName}</span>
+                  <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Locked</span>
+                </div>
+              ) : (
+                <select
+                  value={departmentId}
+                  onChange={(e) => setDepartmentId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
+                >
+                  {departments.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Designation / Title *</label>
@@ -264,9 +292,13 @@ export const EmployeesPage: React.FC = () => {
               >
                 <option value="EMPLOYEE">EMPLOYEE (Standard Staff)</option>
                 <option value="DEPARTMENT_MANAGER">DEPARTMENT_MANAGER (Director)</option>
-                <option value="STORE_KEEPER">STORE_KEEPER (Warehouse Officer)</option>
-                <option value="IT_TECHNICIAN">IT_TECHNICIAN (Hardware & Support)</option>
-                <option value="ADMIN">ADMIN (System Administrator)</option>
+                {!isDepartmentManager && (
+                  <>
+                    <option value="STORE_KEEPER">STORE_KEEPER (Warehouse Officer)</option>
+                    <option value="IT_TECHNICIAN">IT_TECHNICIAN (Hardware & Support)</option>
+                    <option value="ADMIN">ADMIN (System Administrator)</option>
+                  </>
+                )}
               </select>
             </div>
             <div>
