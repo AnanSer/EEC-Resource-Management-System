@@ -1,0 +1,20 @@
+// Ethiopian Engineering Corporation (EEC)
+// Resource Management System (RMS)
+// Prisma Schema — Phase 1: Foundation Baseline
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Baseline placeholder model for Phase 1 verification
+// Full domain models (Users, Resources, Departments, etc.) will be implemented in Phase 2
+model SystemHealth {
+  id        String   @id @default(uuid())
+  status    String   @default("HEALTHY")
+  createdAt DateTime @default(now())
+}
