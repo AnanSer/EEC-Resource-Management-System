@@ -1,16 +1,16 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import FoundationPage from './pages/FoundationPage';
+// import React from 'react';
+import { BrowserRouter } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import { AppRoutes } from './routes/AppRoutes';
 
-export const App: React.FC = () => {
+export function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<FoundationPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
     </BrowserRouter>
   );
-};
+}
 
 export default App;

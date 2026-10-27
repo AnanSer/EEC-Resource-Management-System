@@ -1,6 +1,6 @@
 // Ethiopian Engineering Corporation (EEC)
 // Resource Management System (RMS)
-// Prisma Schema — Phase 1: Foundation Baseline
+// Prisma Schema - Phase 1: Foundation Baseline
 
 generator client {
   provider = "prisma-client-js"
@@ -11,10 +11,39 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Baseline placeholder model for Phase 1 verification
-// Full domain models (Users, Resources, Departments, etc.) will be implemented in Phase 2
+// Baseline System Health
 model SystemHealth {
   id        String   @id @default(uuid())
   status    String   @default("HEALTHY")
   createdAt DateTime @default(now())
+}
+
+// Baseline Custom Auth: User Model
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  role         String    @default("EMPLOYEE")
+  status       String    @default("PENDING")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions     Session[]
+
+  @@map("users")
+}
+
+// Baseline Custom Auth: Session Model (HTTP-only session cookies)
+model Session {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("sessions")
 }

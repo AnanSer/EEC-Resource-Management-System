@@ -1,6 +1,8 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { cookieParserMiddleware, sessionMiddleware } from './auth/auth.middleware';
+import authRoutes from './auth/auth.routes';
 
 // Load environment variables
 dotenv.config();
@@ -34,6 +36,8 @@ app.use(
 // Standard middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParserMiddleware);
+app.use(sessionMiddleware);
 
 // Health check endpoint
 app.get('/api/health', (_req: Request, res: Response) => {
@@ -45,6 +49,9 @@ app.get('/api/health', (_req: Request, res: Response) => {
     environment: process.env.NODE_ENV || 'development',
   });
 });
+
+// Authentication routes (custom Prisma session & user based)
+app.use('/api/auth', authRoutes);
 
 // Root informational endpoint
 app.get('/', (_req: Request, res: Response) => {
