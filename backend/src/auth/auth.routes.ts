@@ -1,13 +1,14 @@
-import { Router, Request, Response } from 'express';
+import { Router } from '../http/router';
+import { AppRequest, AppResponse } from '../http/types';
 import { SESSION_COOKIE_NAME } from './session';
 
-const router = Router();
+const router = new Router();
 
 /**
  * GET /api/auth/me
  * Returns the current session status and user information
  */
-router.get('/me', (req: Request, res: Response) => {
+router.get('/me', (req: AppRequest, res: AppResponse) => {
   if (!req.user) {
     return res.status(200).json({
       authenticated: false,
@@ -25,11 +26,11 @@ router.get('/me', (req: Request, res: Response) => {
  * POST /api/auth/logout
  * Clears the HTTP-only session cookie
  */
-router.post('/logout', (_req: Request, res: Response) => {
+router.post('/logout', (_req: AppRequest, res: AppResponse) => {
   res.clearCookie(SESSION_COOKIE_NAME, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'Lax',
     path: '/',
   });
 

@@ -13,7 +13,7 @@ The root of this repository contains **exactly four entries**:
 ```
 EEC-Resource-Management-System/
 ├── frontend/        # React + Vite + TypeScript interactive web application
-├── backend/         # Node.js + Express + TypeScript + Prisma backend API
+├── backend/         # Node.js + native Node.js HTTP (node:http) + TypeScript + Prisma backend API
 ├── docs/            # EEC corporate requirements, roles, workflows, & audit documentation
 └── README.md        # Monorepo architecture & operations guide (this document)
 ```
@@ -25,7 +25,7 @@ EEC-Resource-Management-System/
 | Tier | Technology | Rationale |
 | :--- | :--- | :--- |
 | **Frontend** | React 18, Vite 6, TypeScript 5, Tailwind CSS 3 | Ultra-fast HMR, lightweight bundle (<420 KB), zero SSR complexity. |
-| **Backend** | Node.js, Express, TypeScript, Prisma ORM, PostgreSQL | Robust enterprise relational data modeling, type-safe query execution. |
+| **Backend** | Node.js, native Node.js HTTP (node:http), TypeScript, Prisma ORM, PostgreSQL | Robust enterprise relational data modeling, type-safe query execution. |
 | **Authentication** | Custom Prisma session & HttpOnly cookies | **Strictly NO Better Auth**. Standardized, predictable session tokens. |
 | **Design System** | EEC Design System | Corporate HSL tokens: Deep Navy (`#0A2540`), Teal (`#0D766E`), Warm Sand (`#F4EFEA`), Crimson Bolo Alert. |
 
@@ -46,7 +46,7 @@ The system enforces five authoritative roles defined in `docs/resource-managemen
 ### Department Data Visibility Rules
 - **Department Manager Isolation**: A `DEPARTMENT_MANAGER` can only view and select employees belonging to their own department in employee directories, direct assignment modals, and custody transfers.
 - **Enterprise View**: `ADMIN`, `STORE_KEEPER`, and `IT_TECHNICIAN` maintain corporate-wide visibility for governance, warehouse dispatch, and technical support.
-- **Backend Enforcement**: In production, the backend Express API independently enforces these authorization boundaries on every `/api/*` route using server-side session middleware (`requireRole` and `requireDepartmentAccess`).
+- **Backend Enforcement**: In production, the backend native Node.js HTTP (node:http) API independently enforces these authorization boundaries on every `/api/*` route using server-side session middleware (`requireRole` and `requireDepartmentAccess`).
 
 ---
 
@@ -89,7 +89,7 @@ cp .env.example .env
 # 4. Generate Prisma client
 npm run prisma:generate
 
-# 5. Start Express API server
+# 5. Start native Node.js HTTP (node:http) API server
 npm run dev
 # -> Server will run on http://localhost:5000 (Health check: http://localhost:5000/api/health)
 
@@ -121,7 +121,7 @@ The frontend and backend are designed to be hosted on completely independent pla
    - `FRONTEND_URL`: The public URL of the deployed frontend (e.g. `https://rms.eec.gov.et`).
 
 ### 5.3 CORS & Cross-Origin Cookie Security
-- The backend uses Express `cors` configured with `credentials: true` and strictly validates `origin` against `FRONTEND_URL`.
+- The backend uses native Node.js HTTP (node:http) `cors` configured with `credentials: true` and strictly validates `origin` against `FRONTEND_URL`.
 - Session tokens are stored in secure, HttpOnly, SameSite cookies.
 - **Never expose backend secrets** (e.g. database credentials, JWT secrets) in the frontend bundle. Only `VITE_*` variables are exposed to the client.
 
