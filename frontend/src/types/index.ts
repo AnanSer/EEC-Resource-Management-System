@@ -281,13 +281,21 @@ export interface NotificationItem {
 }
 
 export interface DashboardMetrics {
+  scope?: 'CORPORATION' | 'DEPARTMENT';
+  departmentId?: string | null;
+  departmentName?: string | null;
+  departmentCode?: string | null;
   totalAssets: number;
   availableAssets: number;
   assignedAssets: number;
   maintenanceAssets: number;
   testingAssets: number;
+  retiredAssets?: number;
   totalValueETB: number;
-  categoryCounts: Record<ResourceCategory, number>;
-  statusCounts: Record<ResourceStatus, number>;
+  utilizationRate?: number;
+  categoryCounts: Record<string, number>;
+  categoryValues?: Record<string, number>;
+  categoryPercentages?: Record<string, number>;
+  statusCounts: Record<string, number>;
   recentAlerts: NotificationItem[];
 }

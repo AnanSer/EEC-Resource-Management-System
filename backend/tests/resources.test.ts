@@ -1,4 +1,4 @@
-﻿import http from 'node:http';
+import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import prisma from '../src/lib/prisma.js';
 
@@ -352,6 +352,103 @@ async function runTests() {
       cookie: adminCookie,
     });
     assert(verifyDeleted.status === 404, 'Deleted resource returns 404 Not Found');
+
+    // 8. Dashboard Metrics & Department Visibility Regression Tests
+    console.log('\n--- 8. Dashboard Metrics & Department Visibility Regression Tests ---');
+    
+    // 8.1 Metrics scoping for Corporate roles vs Department roles
+    const adminMetricsRes = await request('GET', '/api/resources/metrics', { cookie: adminCookie });
+    assert(adminMetricsRes.status === 200, 'Admin can fetch metrics (200)');
+    assert(adminMetricsRes.body?.metrics?.scope === 'CORPORATION', 'Admin metrics scope is CORPORATION');
+    assert(adminMetricsRes.body?.metrics?.totalAssets >= 9, 'Admin metrics totalAssets reflects all corporate assets (>= 9)');
+    assert(typeof adminMetricsRes.body?.metrics?.utilizationRate === 'number', 'Metrics contain numeric utilizationRate');
+    assert(typeof adminMetricsRes.body?.metrics?.categoryValues === 'object', 'Metrics contain categoryValues object');
+    assert(typeof adminMetricsRes.body?.metrics?.categoryPercentages === 'object', 'Metrics contain categoryPercentages object');
+
+    const storeMetricsRes = await request('GET', '/api/resources/metrics', { cookie: storeCookie });
+    assert(storeMetricsRes.body?.metrics?.scope === 'CORPORATION', 'Store Keeper metrics scope is CORPORATION');
+    assert(storeMetricsRes.body?.metrics?.totalAssets === adminMetricsRes.body?.metrics?.totalAssets, 'Store Keeper sees corporate-wide total assets');
+
+    const itMetricsRes = await request('GET', '/api/resources/metrics', { cookie: itCookie });
+    assert(itMetricsRes.body?.metrics?.scope === 'CORPORATION', 'IT Technician metrics scope is CORPORATION');
+    assert(itMetricsRes.body?.metrics?.totalAssets === adminMetricsRes.body?.metrics?.totalAssets, 'IT Technician sees corporate-wide total assets');
+
+    const mgrMetricsRes = await request('GET', '/api/resources/metrics', { cookie: mgrCookie });
+    assert(mgrMetricsRes.status === 200, 'Department Manager can fetch metrics (200)');
+    assert(mgrMetricsRes.body?.metrics?.scope === 'DEPARTMENT', 'Manager metrics scope is strictly DEPARTMENT');
+    assert(mgrMetricsRes.body?.metrics?.departmentId === 'dept-101', 'Manager metrics departmentId is dept-101');
+    assert(mgrMetricsRes.body?.metrics?.departmentName === 'Transport & Infrastructure Design', 'Manager metrics contains correct departmentName');
+    assert(mgrMetricsRes.body?.metrics?.totalAssets === 3, 'Manager sees exactly 3 assets for dept-101 (3-versus-9 scoping confirmed)');
+    assert(mgrMetricsRes.body?.metrics?.availableAssets === 3, 'Manager sees exactly 3 available assets for dept-101');
+    assert(mgrMetricsRes.body?.metrics?.totalValueETB === 6040000, 'Manager metrics valuation reflects only dept-101 assets (6,040,000 ETB)');
+    assert(mgrMetricsRes.body?.metrics?.categoryCounts?.VEHICLES === 1, 'Manager category counts reflect dept-101 vehicles (1)');
+    assert(mgrMetricsRes.body?.metrics?.categoryCounts?.SURVEYING_GEOTECHNICAL === undefined, 'Manager category counts exclude other departments');
+
+    const empMetricsRes = await request('GET', '/api/resources/metrics', { cookie: empCookie });
+    assert(empMetricsRes.body?.metrics?.scope === 'DEPARTMENT', 'Employee metrics scope is strictly DEPARTMENT');
+    assert(empMetricsRes.body?.metrics?.totalAssets === 3, 'Employee sees exactly 3 department assets');
+
+    // 8.2 Resource visibility check for the new resource EEC-IT-2026-7508 (in dept-107)
+    const adminAllRes = await request('GET', '/api/resources', { cookie: adminCookie });
+    const hasNewAdmin = adminAllRes.body?.resources?.some((r: any) => r.itemCode === 'EEC-IT-2026-7508');
+    assert(hasNewAdmin, 'Admin can see newly registered resource EEC-IT-2026-7508 in registry');
+
+    const storeAllRes = await request('GET', '/api/resources', { cookie: storeCookie });
+    const hasNewStore = storeAllRes.body?.resources?.some((r: any) => r.itemCode === 'EEC-IT-2026-7508');
+    assert(hasNewStore, 'Store Keeper can see newly registered resource EEC-IT-2026-7508 in registry');
+
+    const itAllRes = await request('GET', '/api/resources', { cookie: itCookie });
+    const hasNewIT = itAllRes.body?.resources?.some((r: any) => r.itemCode === 'EEC-IT-2026-7508');
+    assert(hasNewIT, 'IT Technician can see newly registered resource EEC-IT-2026-7508 in registry');
+
+    const mgrAllRes = await request('GET', '/api/resources', { cookie: mgrCookie });
+    const hasNewMgr = mgrAllRes.body?.resources?.some((r: any) => r.itemCode === 'EEC-IT-2026-7508');
+    assert(!hasNewMgr, 'Manager in dept-101 CANNOT see EEC-IT-2026-7508 (belongs to dept-107, department boundary enforced)');
+
+    const empAllRes = await request('GET', '/api/resources', { cookie: empCookie });
+    const hasNewEmp = empAllRes.body?.resources?.some((r: any) => r.itemCode === 'EEC-IT-2026-7508');
+    assert(!hasNewEmp, 'Employee in dept-101 CANNOT see EEC-IT-2026-7508 (belongs to dept-107, department boundary enforced)');
+
+    const mgrDirectGet = await request('GET', '/api/resources/EEC-IT-2026-7508', { cookie: mgrCookie });
+    assert(mgrDirectGet.status === 403, 'Manager direct lookup of foreign resource EEC-IT-2026-7508 returns 403 Forbidden');
+
+    const empDirectGet = await request('GET', '/api/resources/EEC-IT-2026-7508', { cookie: empCookie });
+    assert(empDirectGet.status === 403, 'Employee direct lookup of foreign resource EEC-IT-2026-7508 returns 403 Forbidden');
+
+    // 8.3 Verify authorized manager CAN see and manage resources belonging to their own department
+    const mgrOwnGet = await request('GET', '/api/resources/EEC-VEHC-2022-081', { cookie: mgrCookie });
+    assert(mgrOwnGet.status === 200, 'Manager can view resource EEC-VEHC-2022-081 belonging to own department (dept-101)');
+    assert(mgrOwnGet.body?.resource?.name?.includes('Land Cruiser'), 'Resource details correctly retrieved by department manager');
+
+    // Test registering a new resource inside manager's own department
+    const dept101AssetCode = 'EEC-IT-TEST-' + Date.now().toString().slice(-4);
+    const mgrRegOwn = await request('POST', '/api/resources', {
+      cookie: mgrCookie,
+      body: {
+        itemCode: dept101AssetCode,
+        name: 'TID Highway CAD Station',
+        category: 'IT_EQUIPMENT',
+        departmentId: 'dept-101',
+        condition: 'EXCELLENT',
+        location: 'HQ Floor 4 - Room 408',
+        purchaseCostETB: 120000,
+      },
+    });
+    assert(mgrRegOwn.status === 201, 'Manager can successfully register new resource in own department (dept-101)');
+    const mgrRegId = mgrRegOwn.body?.resource?.id;
+
+    // Verify manager's metrics and list now reflect 4 assets
+    const mgrUpdatedMetrics = await request('GET', '/api/resources/metrics', { cookie: mgrCookie });
+    assert(mgrUpdatedMetrics.body?.metrics?.totalAssets === 4, 'Manager metrics immediately increment to 4 for own department');
+
+    const mgrUpdatedList = await request('GET', '/api/resources', { cookie: mgrCookie });
+    const hasNewlyAddedInDept = mgrUpdatedList.body?.resources?.some((r: any) => r.itemCode === dept101AssetCode);
+    assert(hasNewlyAddedInDept, 'Newly registered resource in dept-101 is immediately visible to manager');
+
+    // Clean up temporary test resource
+    await request('DELETE', `/api/resources/${mgrRegId}`, { cookie: adminCookie });
+    const postCleanupMetrics = await request('GET', '/api/resources/metrics', { cookie: mgrCookie });
+    assert(postCleanupMetrics.body?.metrics?.totalAssets === 3, 'Post-cleanup manager metrics reset to 3, existing records preserved');
 
   } catch (err) {
     console.error('Test suite uncaught error:', err);

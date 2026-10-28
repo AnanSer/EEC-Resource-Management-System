@@ -8,7 +8,8 @@ interface StatCardProps {
   colorClass?: string;
   trend?: {
     value: string;
-    isPositive: boolean;
+    isPositive?: boolean;
+    label?: string;
   };
 }
 
@@ -44,10 +45,18 @@ export const StatCard: React.FC<StatCardProps> = ({
 
       {trend && (
         <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-slate-100 text-xs">
-          <span className={`font-semibold ${trend.isPositive ? 'text-emerald-600' : 'text-amber-600'}`}>
+          <span
+            className={`font-semibold ${
+              trend.isPositive === undefined
+                ? 'text-slate-500'
+                : trend.isPositive
+                ? 'text-emerald-600'
+                : 'text-amber-600'
+            }`}
+          >
             {trend.value}
           </span>
-          <span className="text-slate-400">vs last quarter</span>
+          <span className="text-slate-400">{trend.label || 'vs last quarter'}</span>
         </div>
       )}
     </div>

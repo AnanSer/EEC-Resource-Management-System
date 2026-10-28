@@ -12,6 +12,7 @@ export interface SessionUser {
   status: string;
   departmentId?: string | null;
   departmentName?: string | null;
+  departmentCode?: string | null;
 }
 
 /**
@@ -82,6 +83,7 @@ export async function validateSession(token: string): Promise<{ session: { id: s
     status: record.user.status,
     departmentId: record.user.departmentId,
     departmentName: record.user.department?.name || null,
+    departmentCode: record.user.department?.code || null,
   };
 
   return {

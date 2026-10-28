@@ -84,13 +84,18 @@ router.get('/metrics', requireAuth, async (req: AppRequest, res: AppResponse) =>
   try {
     const userRole = req.user!.role;
     const userDeptId = req.user!.departmentId;
+    const isDepartmentScoped = (userRole === 'DEPARTMENT_MANAGER' || userRole === 'EMPLOYEE');
 
     let whereClause: any = {};
-    if (userRole === 'DEPARTMENT_MANAGER' || userRole === 'EMPLOYEE') {
+    if (isDepartmentScoped) {
       if (!userDeptId) {
         return res.status(200).json({
           success: true,
           metrics: {
+            scope: 'DEPARTMENT',
+            departmentId: null,
+            departmentName: null,
+            departmentCode: null,
             totalAssets: 0,
             availableAssets: 0,
             assignedAssets: 0,
@@ -98,12 +103,17 @@ router.get('/metrics', requireAuth, async (req: AppRequest, res: AppResponse) =>
             testingAssets: 0,
             retiredAssets: 0,
             totalValueETB: 0,
+            utilizationRate: 0,
             categoryCounts: {},
+            categoryValues: {},
+            categoryPercentages: {},
             statusCounts: {},
           },
         });
       }
       whereClause = { departmentId: userDeptId };
+    } else if (req.query?.departmentId && req.query.departmentId !== 'ALL') {
+      whereClause = { departmentId: req.query.departmentId };
     }
 
     const allResources = await prisma.resource.findMany({
@@ -124,8 +134,8 @@ router.get('/metrics', requireAuth, async (req: AppRequest, res: AppResponse) =>
     let totalValueETB = 0;
 
     const categoryCounts: Record<string, number> = {};
+    const categoryValues: Record<string, number> = {};
     const statusCounts: Record<string, number> = {};
-
 
     for (const r of allResources) {
       if (r.status === 'AVAILABLE') availableAssets++;
@@ -134,14 +144,29 @@ router.get('/metrics', requireAuth, async (req: AppRequest, res: AppResponse) =>
       else if (r.status === 'TESTING') testingAssets++;
       else if (r.status === 'RETIRED' || r.status === 'DISPOSED') retiredAssets++;
 
-      totalValueETB += r.currentValueETB || 0;
+      const val = r.currentValueETB || 0;
+      totalValueETB += val;
       categoryCounts[r.category] = (categoryCounts[r.category] || 0) + 1;
+      categoryValues[r.category] = (categoryValues[r.category] || 0) + val;
       statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
+    }
+
+    const utilizationRate = totalAssets > 0 ? Number(((assignedAssets / totalAssets) * 100).toFixed(1)) : 0;
+
+    const categoryPercentages: Record<string, number> = {};
+    for (const cat of Object.keys(categoryValues)) {
+      categoryPercentages[cat] = totalValueETB > 0
+        ? Number(((categoryValues[cat] / totalValueETB) * 100).toFixed(1))
+        : 0;
     }
 
     return res.status(200).json({
       success: true,
       metrics: {
+        scope: isDepartmentScoped ? 'DEPARTMENT' : 'CORPORATION',
+        departmentId: isDepartmentScoped ? userDeptId : (whereClause.departmentId || null),
+        departmentName: isDepartmentScoped ? (req.user!.departmentName || null) : null,
+        departmentCode: isDepartmentScoped ? (req.user!.departmentCode || null) : null,
         totalAssets,
         availableAssets,
         assignedAssets,
@@ -149,7 +174,10 @@ router.get('/metrics', requireAuth, async (req: AppRequest, res: AppResponse) =>
         testingAssets,
         retiredAssets,
         totalValueETB,
+        utilizationRate,
         categoryCounts,
+        categoryValues,
+        categoryPercentages,
         statusCounts,
       },
     });

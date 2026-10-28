@@ -1,4 +1,4 @@
-﻿import api from '../lib/axios';
+import api from '../lib/axios';
 import { Resource, ResourceCategory, ResourceStatus, DashboardMetrics } from '../types';
 
 export interface ResourceFilters {
@@ -157,13 +157,21 @@ export const resourceService = {
       const res = await api.get('/resources/metrics');
       const data = res.data.metrics || {};
       return {
+        scope: data.scope || 'CORPORATION',
+        departmentId: data.departmentId || null,
+        departmentName: data.departmentName || null,
+        departmentCode: data.departmentCode || null,
         totalAssets: data.totalAssets ?? 0,
         availableAssets: data.availableAssets ?? 0,
         assignedAssets: data.assignedAssets ?? 0,
         maintenanceAssets: data.maintenanceAssets ?? 0,
         testingAssets: data.testingAssets ?? 0,
+        retiredAssets: data.retiredAssets ?? 0,
         totalValueETB: data.totalValueETB ?? 0,
+        utilizationRate: data.utilizationRate ?? 0,
         categoryCounts: data.categoryCounts ?? {},
+        categoryValues: data.categoryValues ?? {},
+        categoryPercentages: data.categoryPercentages ?? {},
         statusCounts: data.statusCounts ?? {},
         recentAlerts: [],
       };
