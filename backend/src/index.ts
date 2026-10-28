@@ -10,6 +10,7 @@ import { sessionMiddleware } from './auth/auth.middleware';
 import authRouter from './auth/auth.routes';
 import departmentRouter from './departments/department.routes';
 import employeeRouter from './employees/employee.routes';
+import resourceRouter from './resources/resource.routes';
 
 // Load environment variables
 dotenv.config();
@@ -43,6 +44,7 @@ router.get('/api/health', (_req: AppRequest, res: AppResponse) => {
 router.mount('/api/auth', authRouter);
 router.mount('/api/departments', departmentRouter);
 router.mount('/api/employees', employeeRouter);
+router.mount('/api/resources', resourceRouter);
 
 // Root informational endpoint
 router.get('/', (_req: AppRequest, res: AppResponse) => {

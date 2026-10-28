@@ -17,6 +17,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 const CATEGORIES: { label: string; value: ResourceCategory | 'ALL' }[] = [
   { label: 'All Equipment', value: 'ALL' },
@@ -32,6 +33,10 @@ export const ResourceListPage: React.FC = () => {
   const [resources, setResources] = useState<Resource[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const { currentRole } = useAuth();
+  const canRegister = currentRole === 'ADMIN' || currentRole === 'STORE_KEEPER' || currentRole === 'DEPARTMENT_MANAGER';
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<ResourceCategory | 'ALL'>('ALL');
@@ -81,8 +86,10 @@ export const ResourceListPage: React.FC = () => {
       if (depts.length > 0 && !newDepartmentId) {
         setNewDepartmentId(depts[0].id);
       }
-    } catch (err) {
+      setFetchError(null);
+    } catch (err: any) {
       console.error('Failed to load resources', err);
+      setFetchError(err.response?.data?.message || 'Failed to load resources from server');
     } finally {
       setLoading(false);
     }
@@ -156,11 +163,13 @@ export const ResourceListPage: React.FC = () => {
       setNewSubcategory('');
       setPlateNumber('');
       setSerialNumber('');
+      setRegisterError(null);
       setToastMessage(`Successfully registered asset ${itemCode}`);
       setTimeout(() => setToastMessage(null), 4000);
       loadResources();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setRegisterError(err.response?.data?.message || err.message || 'Failed to register equipment');
     } finally {
       setSaving(false);
     }
@@ -193,13 +202,18 @@ export const ResourceListPage: React.FC = () => {
           { label: 'Resource Registry' }
         ]}
       >
-        <button
-          onClick={() => setIsRegisterModalOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-eec-primary text-white rounded-xl font-bold text-xs hover:bg-[#0E5161] transition-all shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Register New Resource
-        </button>
+        {canRegister && (
+          <button
+            onClick={() => {
+              setRegisterError(null);
+              setIsRegisterModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-eec-primary text-white rounded-xl font-bold text-xs hover:bg-[#0E5161] transition-all shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Register New Resource
+          </button>
+        )}
       </PageHeader>
 
       {/* Category Tabs */}
@@ -218,6 +232,21 @@ export const ResourceListPage: React.FC = () => {
           </button>
         ))}
       </div>
+
+{fetchError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between text-rose-800 text-xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+            <span>{fetchError}</span>
+          </div>
+          <button
+            onClick={() => loadResources()}
+            className="px-3 py-1.5 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Filters & Search Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
@@ -435,6 +464,12 @@ export const ResourceListPage: React.FC = () => {
         maxWidth="max-w-2xl"
       >
         <form onSubmit={handleRegister} className="space-y-4">
+          {registerError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>{registerError}</span>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase mb-1">

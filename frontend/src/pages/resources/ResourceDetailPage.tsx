@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { resourceService } from '../../services/resourceService';
 import { Resource, ResourceStatus } from '../../types';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -31,6 +32,8 @@ export const ResourceDetailPage: React.FC = () => {
   const [newStatus, setNewStatus] = useState<ResourceStatus>('AVAILABLE');
   const [statusRemarks, setStatusRemarks] = useState('');
   const [savingStatus, setSavingStatus] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const { currentRole, currentUser } = useAuth();
 
   // Success Feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -58,6 +61,7 @@ export const ResourceDetailPage: React.FC = () => {
     e.preventDefault();
     if (!resource) return;
     setSavingStatus(true);
+    setStatusError(null);
     try {
       const updated = await resourceService.update(resource.id, {
         status: newStatus,
@@ -66,11 +70,13 @@ export const ResourceDetailPage: React.FC = () => {
       if (updated) {
         setResource(updated);
         setIsStatusModalOpen(false);
+        setStatusRemarks('');
         setToastMessage(`Updated status to ${newStatus}`);
         setTimeout(() => setToastMessage(null), 3000);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setStatusError(err.response?.data?.message || err.message || 'Failed to update resource status');
     } finally {
       setSavingStatus(false);
     }
@@ -172,12 +178,17 @@ export const ResourceDetailPage: React.FC = () => {
 
           {/* Quick Actions */}
           <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => setIsStatusModalOpen(true)}
-              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-colors"
-            >
-              Update Custody / Status
-            </button>
+            {(currentRole === 'ADMIN' || currentRole === 'STORE_KEEPER' || (currentRole === 'DEPARTMENT_MANAGER' && (!resource.currentDepartmentId || resource.currentDepartmentId === currentUser?.departmentId))) && (
+              <button
+                onClick={() => {
+                  setStatusError(null);
+                  setIsStatusModalOpen(true);
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-colors"
+              >
+                Update Custody / Status
+              </button>
+            )}
             <button
               onClick={() => alert('Simulating barcode generation')}
               className="p-2 border border-slate-200 hover:border-slate-300 text-slate-600 rounded-xl transition-colors"
@@ -417,6 +428,13 @@ export const ResourceDetailPage: React.FC = () => {
         subtitle={`Modify operational status for ${resource.itemCode}`}
       >
         <form onSubmit={handleUpdateStatus} className="space-y-4">
+          {statusError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>{statusError}</span>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
               Select New Operational Status
@@ -427,12 +445,15 @@ export const ResourceDetailPage: React.FC = () => {
               className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
             >
               <option value="AVAILABLE">Available in Store</option>
-              <option value="ASSIGNED">Assigned / In Field Use</option>
-              <option value="MAINTENANCE">Under Maintenance</option>
-              <option value="TESTING">Inspection / Testing</option>
-              <option value="RETIRED">Retired</option>
+              <option value="ASSIGNED" disabled>Assigned / In Field Use (Managed by Assignment Workflow)</option>
+              <option value="MAINTENANCE" disabled>Under Maintenance (Managed by Maintenance Workflow)</option>
+              <option value="TESTING" disabled>Inspection / Testing (Managed by QA Workflow)</option>
+              <option value="RETIRED">Retired / Decommissioned</option>
               <option value="DISPOSED">Disposed</option>
             </select>
+            <p className="text-[11px] text-slate-500 mt-1">
+              Operational transitions to ASSIGNED, MAINTENANCE, and TESTING are managed by custody workflows. Direct registry changes support AVAILABLE, RETIRED, and DISPOSED.
+            </p>
           </div>
 
           <div>

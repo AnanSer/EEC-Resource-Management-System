@@ -1,3 +1,4 @@
+import { seedResources } from './seed_resources';
 import prisma from '../src/lib/prisma';
 import { hashPassword } from '../src/auth/password';
 
@@ -302,6 +303,7 @@ async function main() {
     console.log(`[EEC-RMS Seed] Employee seeded: ${e.employeeId} - ${e.name} (${e.departmentId})`);
   }
 
+  await seedResources();
   console.log('[EEC-RMS Seed] Seeding completed successfully.');
 }
 

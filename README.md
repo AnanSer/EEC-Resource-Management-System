@@ -145,7 +145,39 @@ When preparing to connect the backend to live PostgreSQL:
 
 ---
 
-## 7. Handover Documentation Index
+---
+
+## 7. Active API Services Backed by PostgreSQL
+
+The native Node.js HTTP backend implements the following core corporate API endpoints backed by PostgreSQL:
+
+### Authentication & Account Approval
+- `POST /api/auth/register` - Register new staff account with initial `PENDING` status
+- `POST /api/auth/login` - Session-backed login issuing HttpOnly cookie
+- `POST /api/auth/logout` - Invalidate database session
+- `GET /api/auth/me` - Session verification and active user profile
+- `GET /api/auth/pending-users` - List pending registrations (`ADMIN` only)
+- `PUT /api/auth/approve-user/:id` - Approve pending accounts (`ADMIN` only)
+
+### Departments & Employees
+- `GET /api/departments` - List directorates (`ADMIN`, `STORE_KEEPER`: all; `DEPARTMENT_MANAGER`, `EMPLOYEE`: assigned)
+- `POST /api/departments` - Create directorate (`ADMIN` only)
+- `PUT /api/departments/:id` - Update directorate (`ADMIN` only)
+- `DELETE /api/departments/:id` - Delete empty directorate (`ADMIN` only)
+- `GET /api/employees` - Employee directory (scoped by role and directorate)
+- `POST /api/employees` - Create personnel record (`ADMIN` or Manager within directorate)
+- `PUT /api/employees/:id` - Update employee details
+- `DELETE /api/employees/:id` - Terminate/delete employee record (`ADMIN` only)
+
+### Resource Registry & Inventory
+- `GET /api/resources` - Full registry query with pagination, search, category, status, and department filtering
+- `GET /api/resources/metrics` - Summary statistics (`totalAssets`, `availableAssets`, `totalValueETB`, category/status tallies)
+- `GET /api/resources/:id` - Single resource lookup by UUID or unique item code with department and specs
+- `POST /api/resources` - Register physical asset (`ADMIN`, `STORE_KEEPER`, or Manager within assigned directorate)
+- `PUT /api/resources/:id` - Update asset specifications, location, or decommission status (`RETIRED` / `DISPOSED`)
+- `DELETE /api/resources/:id` - Delete unassigned resource record (`ADMIN` only; blocked if currently assigned)
+
+## 8. Handover Documentation Index
 
 For detailed corporate specifications and business logic rules, consult `docs/`:
 - [`docs/resource-management-handover/01-system-architecture.md`](docs/resource-management-handover/01-system-architecture.md)

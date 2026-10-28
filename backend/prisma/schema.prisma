@@ -1,6 +1,6 @@
 // Ethiopian Engineering Corporation (EEC)
 // Resource Management System (RMS)
-// Prisma Schema - Phase 2: Departments & Employees
+// Prisma Schema - Phase 3: Resource Registry
 
 generator client {
   provider = "prisma-client-js"
@@ -32,6 +32,7 @@ model Department {
 
   users       User[]
   employees   Employee[]
+  resources   Resource[]
 
   @@map("departments")
 }
@@ -57,21 +58,22 @@ model User {
 
 // Personnel / Employee Model
 model Employee {
-  id           String     @id @default(uuid())
-  employeeId   String     @unique
-  name         String
-  email        String     @unique
-  phone        String?
-  departmentId String
-  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
-  designation  String
-  role         String     @default("EMPLOYEE")
-  isActive     Boolean    @default(true)
-  hireDate     DateTime   @default(now())
-  userId       String?    @unique
-  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id                String     @id @default(uuid())
+  employeeId        String     @unique
+  name              String
+  email             String     @unique
+  phone             String?
+  departmentId      String
+  department        Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  designation       String
+  role              String     @default("EMPLOYEE")
+  isActive          Boolean    @default(true)
+  hireDate          DateTime   @default(now())
+  userId            String?    @unique
+  user              User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  assignedResources Resource[]
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   @@map("employees")
 }
@@ -88,4 +90,40 @@ model Session {
   @@index([userId])
   @@index([token])
   @@map("sessions")
+}
+
+// Individually Tracked Corporate Resource / Physical Asset
+model Resource {
+  id                  String     @id @default(uuid())
+  itemCode            String     @unique
+  name                String
+  category            String
+  subcategory         String?
+  description         String?
+  manufacturer        String?
+  model               String?
+  serialNumber        String?
+  status              String     @default("AVAILABLE")
+  condition           String     @default("GOOD")
+  location            String     @default("Central Store - Kersa")
+  departmentId        String
+  department          Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  currentAssigneeId   String?
+  currentAssignee     Employee?  @relation(fields: [currentAssigneeId], references: [id], onDelete: SetNull)
+  assignedAt          DateTime?
+  purchaseDate        DateTime?
+  purchaseCostETB     Float?
+  currentValueETB     Float?
+  warrantyExpiry      DateTime?
+  supplier            String?
+  notes               String?
+  specs               Json?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@index([departmentId])
+  @@index([category])
+  @@index([status])
+  @@index([itemCode])
+  @@map("resources")
 }
