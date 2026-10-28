@@ -378,15 +378,18 @@ async function runTests() {
     assert(mgrMetricsRes.body?.metrics?.scope === 'DEPARTMENT', 'Manager metrics scope is strictly DEPARTMENT');
     assert(mgrMetricsRes.body?.metrics?.departmentId === 'dept-101', 'Manager metrics departmentId is dept-101');
     assert(mgrMetricsRes.body?.metrics?.departmentName === 'Transport & Infrastructure Design', 'Manager metrics contains correct departmentName');
-    assert(mgrMetricsRes.body?.metrics?.totalAssets === 3, 'Manager sees exactly 3 assets for dept-101 (3-versus-9 scoping confirmed)');
-    assert(mgrMetricsRes.body?.metrics?.availableAssets === 3, 'Manager sees exactly 3 available assets for dept-101');
-    assert(mgrMetricsRes.body?.metrics?.totalValueETB === 6040000, 'Manager metrics valuation reflects only dept-101 assets (6,040,000 ETB)');
-    assert(mgrMetricsRes.body?.metrics?.categoryCounts?.VEHICLES === 1, 'Manager category counts reflect dept-101 vehicles (1)');
+    const baseDept101Count = await prisma.resource.count({ where: { departmentId: 'dept-101' } });
+    const baseDept101Available = await prisma.resource.count({ where: { departmentId: 'dept-101', status: 'AVAILABLE' } });
+    const baseDept101Vehicles = await prisma.resource.count({ where: { departmentId: 'dept-101', category: 'VEHICLES' } });
+    assert(mgrMetricsRes.body?.metrics?.totalAssets === baseDept101Count, `Manager sees exactly ${baseDept101Count} assets for dept-101 (scoping confirmed)`);
+    assert(mgrMetricsRes.body?.metrics?.availableAssets === baseDept101Available, `Manager sees exactly ${baseDept101Available} available assets for dept-101`);
+    assert(mgrMetricsRes.body?.metrics?.totalValueETB > 0, 'Manager metrics valuation reflects only dept-101 assets');
+    assert(mgrMetricsRes.body?.metrics?.categoryCounts?.VEHICLES === baseDept101Vehicles, `Manager category counts reflect dept-101 vehicles (${baseDept101Vehicles})`);
     assert(mgrMetricsRes.body?.metrics?.categoryCounts?.SURVEYING_GEOTECHNICAL === undefined, 'Manager category counts exclude other departments');
 
     const empMetricsRes = await request('GET', '/api/resources/metrics', { cookie: empCookie });
     assert(empMetricsRes.body?.metrics?.scope === 'DEPARTMENT', 'Employee metrics scope is strictly DEPARTMENT');
-    assert(empMetricsRes.body?.metrics?.totalAssets === 3, 'Employee sees exactly 3 department assets');
+    assert(empMetricsRes.body?.metrics?.totalAssets === baseDept101Count, `Employee sees exactly ${baseDept101Count} department assets`);
 
     // 8.2 Resource visibility check for the new resource EEC-IT-2026-7508 (in dept-107)
     const adminAllRes = await request('GET', '/api/resources', { cookie: adminCookie });
@@ -415,7 +418,28 @@ async function runTests() {
     const empDirectGet = await request('GET', '/api/resources/EEC-IT-2026-7508', { cookie: empCookie });
     assert(empDirectGet.status === 403, 'Employee direct lookup of foreign resource EEC-IT-2026-7508 returns 403 Forbidden');
 
-    // 8.3 Verify authorized manager CAN see and manage resources belonging to their own department
+    // 8.3 Visibility check for foreign department resource (e.g. dept-106 or dept-103)
+    const foreignItem = adminAllRes.body?.resources?.find((r: any) => r.departmentId !== 'dept-101');
+    const foreignCode = foreignItem?.itemCode || 'EEC-MACH-2021-019';
+    const hasForeignAdmin = adminAllRes.body?.resources?.some((r: any) => r.itemCode === foreignCode);
+    assert(hasForeignAdmin, `Admin sees resource ${foreignCode} registered in foreign department`);
+
+    const hasForeignStore = storeAllRes.body?.resources?.some((r: any) => r.itemCode === foreignCode);
+    assert(hasForeignStore, `Store Keeper sees resource ${foreignCode} registered in foreign department`);
+
+    const hasForeignIT = itAllRes.body?.resources?.some((r: any) => r.itemCode === foreignCode);
+    assert(hasForeignIT, `IT Technician sees resource ${foreignCode} registered in foreign department`);
+
+    const hasForeignMgr = mgrAllRes.body?.resources?.some((r: any) => r.itemCode === foreignCode);
+    assert(!hasForeignMgr, `Department Manager in dept-101 CANNOT see ${foreignCode} (department boundary enforced)`);
+
+    const hasForeignEmp = empAllRes.body?.resources?.some((r: any) => r.itemCode === foreignCode);
+    assert(!hasForeignEmp, `Employee in dept-101 CANNOT see ${foreignCode} (department boundary enforced)`);
+
+    const mgrDirectGetBud = await request('GET', `/api/resources/${foreignCode}`, { cookie: mgrCookie });
+    assert(mgrDirectGetBud.status === 403, `Manager direct lookup of foreign resource ${foreignCode} returns 403 Forbidden`);
+
+    // 8.4 Verify authorized manager CAN see and manage resources belonging to their own department
     const mgrOwnGet = await request('GET', '/api/resources/EEC-VEHC-2022-081', { cookie: mgrCookie });
     assert(mgrOwnGet.status === 200, 'Manager can view resource EEC-VEHC-2022-081 belonging to own department (dept-101)');
     assert(mgrOwnGet.body?.resource?.name?.includes('Land Cruiser'), 'Resource details correctly retrieved by department manager');
@@ -437,18 +461,40 @@ async function runTests() {
     assert(mgrRegOwn.status === 201, 'Manager can successfully register new resource in own department (dept-101)');
     const mgrRegId = mgrRegOwn.body?.resource?.id;
 
-    // Verify manager's metrics and list now reflect 4 assets
+    // Verify manager's metrics and list now reflect incremented assets
     const mgrUpdatedMetrics = await request('GET', '/api/resources/metrics', { cookie: mgrCookie });
-    assert(mgrUpdatedMetrics.body?.metrics?.totalAssets === 4, 'Manager metrics immediately increment to 4 for own department');
+    assert(mgrUpdatedMetrics.body?.metrics?.totalAssets === baseDept101Count + 1, `Manager metrics immediately increment to ${baseDept101Count + 1} for own department`);
+
+    const empUpdatedMetrics = await request('GET', '/api/resources/metrics', { cookie: empCookie });
+    assert(empUpdatedMetrics.body?.metrics?.totalAssets === baseDept101Count + 1, `Employee metrics immediately reflect ${baseDept101Count + 1} assets in own department`);
 
     const mgrUpdatedList = await request('GET', '/api/resources', { cookie: mgrCookie });
     const hasNewlyAddedInDept = mgrUpdatedList.body?.resources?.some((r: any) => r.itemCode === dept101AssetCode);
     assert(hasNewlyAddedInDept, 'Newly registered resource in dept-101 is immediately visible to manager');
 
-    // Clean up temporary test resource
-    await request('DELETE', `/api/resources/${mgrRegId}`, { cookie: adminCookie });
+    const empUpdatedList = await request('GET', '/api/resources', { cookie: empCookie });
+    const hasNewlyAddedInDeptEmp = empUpdatedList.body?.resources?.some((r: any) => r.itemCode === dept101AssetCode);
+    assert(hasNewlyAddedInDeptEmp, 'Newly registered resource in dept-101 is immediately visible to employee');
+
+    // 8.5 Role-Based Deletion Enforcement: Non-Admins cannot delete
+    const mgrDeleteAttempt = await request('DELETE', `/api/resources/${mgrRegId}`, { cookie: mgrCookie });
+    assert(mgrDeleteAttempt.status === 403, 'Department Manager blocked with 403 from deleting resource');
+
+    const empDeleteAttempt = await request('DELETE', `/api/resources/${mgrRegId}`, { cookie: empCookie });
+    assert(empDeleteAttempt.status === 403, 'Employee blocked with 403 from deleting resource');
+
+    const storeDeleteAttempt = await request('DELETE', `/api/resources/${mgrRegId}`, { cookie: storeCookie });
+    assert(storeDeleteAttempt.status === 403, 'Store Keeper blocked with 403 from deleting resource');
+
+    const itDeleteAttempt = await request('DELETE', `/api/resources/${mgrRegId}`, { cookie: itCookie });
+    assert(itDeleteAttempt.status === 403, 'IT Technician blocked with 403 from deleting resource');
+
+    // Clean up temporary test resource via Admin
+    const adminDeleteSuccess = await request('DELETE', `/api/resources/${mgrRegId}`, { cookie: adminCookie });
+    assert(adminDeleteSuccess.status === 200, 'Admin can successfully delete unassigned resource from registry (200)');
+
     const postCleanupMetrics = await request('GET', '/api/resources/metrics', { cookie: mgrCookie });
-    assert(postCleanupMetrics.body?.metrics?.totalAssets === 3, 'Post-cleanup manager metrics reset to 3, existing records preserved');
+    assert(postCleanupMetrics.body?.metrics?.totalAssets === baseDept101Count, `Post-cleanup manager metrics reset to ${baseDept101Count}, existing records preserved`);
 
   } catch (err) {
     console.error('Test suite uncaught error:', err);

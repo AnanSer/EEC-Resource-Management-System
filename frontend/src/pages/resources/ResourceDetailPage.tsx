@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { resourceService } from '../../services/resourceService';
+import { assignmentService, ResourceCustodyHistory } from '../../services/assignmentService';
 import { Resource, ResourceStatus } from '../../types';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { CategoryBadge } from '../../components/ui/CategoryBadge';
@@ -18,13 +19,15 @@ import {
   QrCode,
   AlertTriangle,
   History,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 
 export const ResourceDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [resource, setResource] = useState<Resource | null>(null);
+  const [custodyHistory, setCustodyHistory] = useState<ResourceCustodyHistory | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Status Change Modal
@@ -33,6 +36,12 @@ export const ResourceDetailPage: React.FC = () => {
   const [statusRemarks, setStatusRemarks] = useState('');
   const [savingStatus, setSavingStatus] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+
+  // Admin Delete Modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const { currentRole, currentUser } = useAuth();
 
   // Success Feedback
@@ -43,8 +52,12 @@ export const ResourceDetailPage: React.FC = () => {
       if (!id) return;
       setLoading(true);
       try {
-        const item = await resourceService.getById(id);
+        const [item, history] = await Promise.all([
+          resourceService.getById(id),
+          assignmentService.getHistory(id).catch(() => null),
+        ]);
         setResource(item);
+        setCustodyHistory(history);
         if (item) {
           setNewStatus(item.status);
         }
@@ -79,6 +92,25 @@ export const ResourceDetailPage: React.FC = () => {
       setStatusError(err.response?.data?.message || err.message || 'Failed to update resource status');
     } finally {
       setSavingStatus(false);
+    }
+  };
+
+  const handleDeleteResource = async () => {
+    if (!resource) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await resourceService.delete(resource.id);
+      setToastMessage(`Successfully deleted ${resource.itemCode} from registry`);
+      setIsDeleteModalOpen(false);
+      setTimeout(() => {
+        navigate('/resources');
+      }, 900);
+    } catch (err: any) {
+      console.error('Failed to delete resource', err);
+      setDeleteError(err.response?.data?.message || err.message || 'Failed to delete resource');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -189,6 +221,31 @@ export const ResourceDetailPage: React.FC = () => {
                 Update Custody / Status
               </button>
             )}
+
+            {currentRole === 'ADMIN' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError(null);
+                  setIsDeleteModalOpen(true);
+                }}
+                disabled={resource.status === 'ASSIGNED' || Boolean(resource.currentAssigneeId)}
+                title={
+                  resource.status === 'ASSIGNED' || Boolean(resource.currentAssigneeId)
+                    ? 'Assigned resources cannot be deleted while in personnel custody. A return workflow must be completed first.'
+                    : 'Permanently delete this unassigned resource from the registry'
+                }
+                className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl transition-all shadow-sm ${
+                  resource.status === 'ASSIGNED' || Boolean(resource.currentAssigneeId)
+                    ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                    : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 hover:border-rose-300'
+                }`}
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Resource
+              </button>
+            )}
+
             <button
               onClick={() => alert('Simulating barcode generation')}
               className="p-2 border border-slate-200 hover:border-slate-300 text-slate-600 rounded-xl transition-colors"
@@ -373,7 +430,23 @@ export const ResourceDetailPage: React.FC = () => {
                       {resource.assignedAt ? new Date(resource.assignedAt).toLocaleDateString() : 'Active Assignment'}
                     </span>
                   </div>
-                  <div className="flex justify-between text-slate-500">
+                  {custodyHistory?.currentAssignment?.expectedReturnDate && (
+                    <div className="flex justify-between text-slate-500">
+                      <span>Expected Return:</span>
+                      <span className="font-medium text-amber-600">
+                        {custodyHistory.currentAssignment.expectedReturnDate}
+                      </span>
+                    </div>
+                  )}
+                  {custodyHistory?.currentAssignment?.purpose && (
+                    <div className="text-slate-500 pt-1 border-t border-slate-200/60">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Purpose</span>
+                      <span className="font-medium text-slate-700 text-[11px]">
+                        {custodyHistory.currentAssignment.purpose}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-slate-500 pt-1">
                     <span>Location:</span>
                     <span className="font-medium text-slate-800">{resource.location}</span>
                   </div>
@@ -382,40 +455,59 @@ export const ResourceDetailPage: React.FC = () => {
             ) : (
               <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-500">
                 <p className="font-semibold text-slate-700">Currently in Central Store</p>
-                <p className="mt-0.5 text-[11px]">Unassigned to individual employee. Available for requisition.</p>
+                <p className="mt-0.5 text-[11px]">Unassigned to individual employee. Available for assignment.</p>
               </div>
             )}
           </div>
 
           {/* Movement & Custody History Timeline */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-card">
-            <div className="flex items-center gap-2 pb-4 border-b border-slate-100 mb-4">
-              <History className="w-5 h-5 text-slate-700" />
-              <h3 className="text-sm font-bold text-slate-900">Custody & Service History</h3>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2">
+                <History className="w-5 h-5 text-slate-700" />
+                <h3 className="text-sm font-bold text-slate-900">Custody & Service History</h3>
+              </div>
+              <Link
+                to="/assignments"
+                className="text-[11px] font-bold text-eec-primary hover:underline"
+              >
+                Manage
+              </Link>
             </div>
 
-            <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200 text-xs">
-              <div className="relative">
-                <span className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white"></span>
-                <p className="font-bold text-slate-900">Operational Verification & Registry</p>
-                <p className="text-slate-500 text-[11px] mt-0.5">Asset validated and marked {resource.status}</p>
-                <span className="text-[10px] text-slate-400">Recent entry</span>
+            {custodyHistory && custodyHistory.timeline.length > 0 ? (
+              <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200 text-xs">
+                {custodyHistory.timeline.map((evt, idx) => (
+                  <div key={idx} className="relative">
+                    <span className={`absolute -left-6 top-0.5 w-4 h-4 rounded-full border-2 border-white ${
+                      evt.type === 'ASSIGNMENT'
+                        ? 'bg-emerald-500'
+                        : evt.type === 'TRANSFER'
+                        ? 'bg-sky-500'
+                        : evt.type === 'RETURN'
+                        ? 'bg-amber-500'
+                        : 'bg-slate-400'
+                    }`}></span>
+                    <p className="font-bold text-slate-900">{evt.title}</p>
+                    <p className="text-slate-500 text-[11px] mt-0.5">{evt.description}</p>
+                    <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                      <span>{new Date(evt.date).toLocaleDateString()}</span>
+                      <span>•</span>
+                      <span>By {evt.actor}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              <div className="relative">
-                <span className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-sky-500 border-2 border-white"></span>
-                <p className="font-bold text-slate-900">Department Custody Handover</p>
-                <p className="text-slate-500 text-[11px] mt-0.5">Allocated to {resource.currentDepartmentName || 'Department'}</p>
-                <span className="text-[10px] text-slate-400">Quarterly allocation</span>
+            ) : (
+              <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200 text-xs">
+                <div className="relative">
+                  <span className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-slate-400 border-2 border-white"></span>
+                  <p className="font-bold text-slate-900">Initial Procurement Intake</p>
+                  <p className="text-slate-500 text-[11px] mt-0.5">Central store intake recorded. Supplier: {resource.supplier || 'EEC Central Tender'}</p>
+                  <span className="text-[10px] text-slate-400">{resource.purchaseDate || new Date().toLocaleDateString()}</span>
+                </div>
               </div>
-
-              <div className="relative">
-                <span className="absolute -left-6 top-0.5 w-4 h-4 rounded-full bg-slate-400 border-2 border-white"></span>
-                <p className="font-bold text-slate-900">Initial Procurement Intake</p>
-                <p className="text-slate-500 text-[11px] mt-0.5">Central store intake recorded by Chief Store Keeper</p>
-                <span className="text-[10px] text-slate-400">{resource.purchaseDate}</span>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -486,6 +578,66 @@ export const ResourceDetailPage: React.FC = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal (Admin only) */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          if (!deleting) {
+            setIsDeleteModalOpen(false);
+            setDeleteError(null);
+          }
+        }}
+        title="Delete Resource from Registry"
+        subtitle={`Administrator deletion safeguard for ${resource.itemCode}`}
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-4">
+          {deleteError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+          )}
+
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Are you sure you want to permanently delete <strong className="text-slate-900">{resource.name}</strong> (<span className="font-mono text-eec-primary">{resource.itemCode}</span>) from the corporate asset registry?
+          </p>
+
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+            <p className="font-bold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              Administrative Safeguard Notice:
+            </p>
+            <p className="text-[11px] text-amber-700 leading-relaxed">
+              Only system administrators can delete records. Assets currently assigned to personnel cannot be deleted until a return workflow is completed. This action is irreversible.
+            </p>
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setDeleteError(null);
+              }}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={handleDeleteResource}
+              className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-sm"
+            >
+              <Trash2 className="w-4 h-4" />
+              {deleting ? 'Deleting...' : 'Confirm Permanent Deletion'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

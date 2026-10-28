@@ -33,6 +33,9 @@ model Department {
   users       User[]
   employees   Employee[]
   resources   Resource[]
+  assignments ResourceAssignment[]
+  transfersFrom CustodyTransfer[] @relation("TransfersFromDept")
+  transfersTo   CustodyTransfer[] @relation("TransfersToDept")
 
   @@map("departments")
 }
@@ -72,6 +75,9 @@ model Employee {
   userId            String?    @unique
   user              User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   assignedResources Resource[]
+  assignments       ResourceAssignment[]
+  transfersFrom     CustodyTransfer[] @relation("TransfersFrom")
+  transfersTo       CustodyTransfer[] @relation("TransfersTo")
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
@@ -118,6 +124,8 @@ model Resource {
   supplier            String?
   notes               String?
   specs               Json?
+  assignments         ResourceAssignment[]
+  transfers           CustodyTransfer[]
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -126,4 +134,76 @@ model Resource {
   @@index([status])
   @@index([itemCode])
   @@map("resources")
+}
+
+// Resource Assignment Model (Active and Historical Assignments)
+model ResourceAssignment {
+  id                    String            @id @default(uuid())
+  assignmentNumber      String            @unique
+  resourceId            String
+  resource              Resource          @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+  employeeId            String
+  employee              Employee          @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  departmentId          String
+  department            Department        @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  assignedByName        String
+  assignedById          String?
+  assignedAt            DateTime          @default(now())
+  expectedReturnDate    DateTime?
+  purpose               String
+  notes                 String?
+  status                String            @default("ACTIVE") // ACTIVE, TRANSFERRED, RETURNED
+  isCurrent             Boolean           @default(true)
+  
+  // Return fields
+  returnedAt            DateTime?
+  returnCondition       String?
+  returnLocation        String?
+  returnNotes           String?
+  returnReceivedByName  String?
+  returnReceivedById    String?
+  
+  transfersOut          CustodyTransfer[] @relation("TransferFromAssignment")
+  transfersIn           CustodyTransfer[] @relation("TransferToAssignment")
+  
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@index([resourceId])
+  @@index([employeeId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([isCurrent])
+  @@map("resource_assignments")
+}
+
+// Custody Transfer History Model
+model CustodyTransfer {
+  id                  String              @id @default(uuid())
+  transferNumber      String              @unique
+  resourceId          String
+  resource            Resource            @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+  fromAssignmentId    String?
+  fromAssignment      ResourceAssignment? @relation("TransferFromAssignment", fields: [fromAssignmentId], references: [id], onDelete: SetNull)
+  toAssignmentId      String?
+  toAssignment        ResourceAssignment? @relation("TransferToAssignment", fields: [toAssignmentId], references: [id], onDelete: SetNull)
+  fromEmployeeId      String
+  fromEmployee        Employee            @relation("TransfersFrom", fields: [fromEmployeeId], references: [id], onDelete: Restrict)
+  toEmployeeId        String
+  toEmployee          Employee            @relation("TransfersTo", fields: [toEmployeeId], references: [id], onDelete: Restrict)
+  fromDepartmentId    String
+  fromDepartment      Department          @relation("TransfersFromDept", fields: [fromDepartmentId], references: [id], onDelete: Restrict)
+  toDepartmentId      String
+  toDepartment        Department          @relation("TransfersToDept", fields: [toDepartmentId], references: [id], onDelete: Restrict)
+  transferredByName   String
+  transferredById     String?
+  reason              String?
+  notes               String?
+  transferredAt       DateTime            @default(now())
+  createdAt           DateTime            @default(now())
+
+  @@index([resourceId])
+  @@index([fromEmployeeId])
+  @@index([toEmployeeId])
+  @@map("custody_transfers")
 }

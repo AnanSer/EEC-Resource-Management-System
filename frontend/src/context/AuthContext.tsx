@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserRole, Employee } from '../types';
 import api from '../lib/axios';
 
@@ -36,8 +36,8 @@ function mapUserToEmployee(user: any): Employee {
     name: user.fullName || user.name || 'EEC Personnel',
     email: user.email,
     phone: '+251 91 123 4567',
-    departmentId: 'dept-eng-01',
-    departmentName: 'Engineering Directorate',
+    departmentId: user.departmentId || 'dept-eng-01',
+    departmentName: user.departmentName || user.department?.name || 'Engineering Directorate',
     designation: getRoleDesignation(user.role),
     role: user.role as UserRole,
     isActive: user.status === 'APPROVED' || user.status === 'ACTIVE',

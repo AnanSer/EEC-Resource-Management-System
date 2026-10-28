@@ -156,22 +156,54 @@ export interface Resource {
 
 export interface AssetAssignment {
   id: string;
+  assignmentNumber?: string;
   resourceId: string;
   resourceName: string;
   resourceCode: string;
+  resourceCategory?: ResourceCategory;
   employeeId: string;
   employeeName: string;
+  employeeDesignation?: string;
   departmentId: string;
   departmentName: string;
+  departmentCode?: string;
   assignedBy: string;
+  assignedById?: string;
   assignedAt: string;
   returnedAt?: string;
   expectedReturnDate?: string;
   purpose: string;
+  notes?: string;
   conditionOnAssignment: ResourceCondition;
   conditionOnReturn?: ResourceCondition;
+  returnLocation?: string;
+  returnNotes?: string;
+  returnReceivedByName?: string;
   isCurrent: boolean;
   status: 'ACTIVE' | 'RETURNED' | 'TRANSFERRED' | 'OVERDUE';
+}
+
+export interface CustodyTransfer {
+  id: string;
+  transferNumber: string;
+  resourceId: string;
+  resourceName: string;
+  resourceCode: string;
+  fromAssignmentId?: string;
+  toAssignmentId?: string;
+  fromEmployeeId: string;
+  fromEmployeeName: string;
+  toEmployeeId: string;
+  toEmployeeName: string;
+  fromDepartmentId: string;
+  fromDepartmentName: string;
+  toDepartmentId: string;
+  toDepartmentName: string;
+  transferredByName: string;
+  reason?: string;
+  notes?: string;
+  transferredAt: string;
+  createdAt: string;
 }
 
 export type RequisitionStatus = 

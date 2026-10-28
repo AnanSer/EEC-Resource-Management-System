@@ -14,7 +14,9 @@ import {
   MapPin, 
   ArrowUpRight, 
   Check,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle,
+  Trash2
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -58,6 +60,12 @@ export const ResourceListPage: React.FC = () => {
   const [plateNumber, setPlateNumber] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [accuracyGrade, setAccuracyGrade] = useState('');
+
+  // Delete Modal state (Admin only)
+  const [itemToDelete, setItemToDelete] = useState<Resource | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -172,6 +180,25 @@ export const ResourceListPage: React.FC = () => {
       setRegisterError(err.response?.data?.message || err.message || 'Failed to register equipment');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteResource = async () => {
+    if (!itemToDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await resourceService.delete(itemToDelete.id);
+      setToastMessage(`Successfully deleted ${itemToDelete.itemCode} from registry`);
+      setIsDeleteModalOpen(false);
+      setItemToDelete(null);
+      setTimeout(() => setToastMessage(null), 4000);
+      loadResources();
+    } catch (err: any) {
+      console.error('Failed to delete resource', err);
+      setDeleteError(err.response?.data?.message || err.message || 'Failed to delete resource');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -388,13 +415,38 @@ export const ResourceListPage: React.FC = () => {
                       {formatETB(item.currentValueETB)}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <Link
-                        to={`/resources/${item.id}`}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-eec-primary hover:text-white rounded-lg font-bold text-[11px] transition-colors"
-                      >
-                        View
-                        <ArrowUpRight className="w-3 h-3" />
-                      </Link>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Link
+                          to={`/resources/${item.id}`}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-eec-primary hover:text-white rounded-lg font-bold text-[11px] transition-colors"
+                        >
+                          View
+                          <ArrowUpRight className="w-3 h-3" />
+                        </Link>
+                        {currentRole === 'ADMIN' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeleteError(null);
+                              setItemToDelete(item);
+                              setIsDeleteModalOpen(true);
+                            }}
+                            disabled={item.status === 'ASSIGNED' || Boolean(item.currentAssigneeId)}
+                            title={
+                              item.status === 'ASSIGNED' || Boolean(item.currentAssigneeId)
+                                ? 'Assigned resources cannot be deleted while in personnel custody'
+                                : 'Delete resource (Admin only)'
+                            }
+                            className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${
+                              item.status === 'ASSIGNED' || Boolean(item.currentAssigneeId)
+                                ? 'text-slate-300 cursor-not-allowed'
+                                : 'text-rose-600 hover:bg-rose-50 hover:text-rose-700'
+                            }`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -442,13 +494,38 @@ export const ResourceListPage: React.FC = () => {
 
               <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
                 <StatusBadge condition={item.condition} />
-                <Link
-                  to={`/resources/${item.id}`}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-eec-primary hover:text-eec-accent transition-colors"
-                >
-                  Details & Custody
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/resources/${item.id}`}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-eec-primary hover:text-eec-accent transition-colors"
+                  >
+                    Details & Custody
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </Link>
+                  {currentRole === 'ADMIN' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeleteError(null);
+                        setItemToDelete(item);
+                        setIsDeleteModalOpen(true);
+                      }}
+                      disabled={item.status === 'ASSIGNED' || Boolean(item.currentAssigneeId)}
+                      title={
+                        item.status === 'ASSIGNED' || Boolean(item.currentAssigneeId)
+                          ? 'Assigned resources cannot be deleted while in personnel custody'
+                          : 'Delete resource (Admin only)'
+                      }
+                      className={`p-1.5 rounded-lg text-xs font-bold transition-colors ${
+                        item.status === 'ASSIGNED' || Boolean(item.currentAssigneeId)
+                          ? 'text-slate-300 cursor-not-allowed'
+                          : 'text-rose-600 hover:bg-rose-50 hover:text-rose-700'
+                      }`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -601,7 +678,7 @@ export const ResourceListPage: React.FC = () => {
                 className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
               >
                 {departments.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                  <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
                 ))}
               </select>
             </div>
@@ -664,6 +741,72 @@ export const ResourceListPage: React.FC = () => {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete Confirmation Modal (Admin only) */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          if (!deleting) {
+            setIsDeleteModalOpen(false);
+            setItemToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+        title="Delete Resource from Registry"
+        subtitle={itemToDelete ? `Administrator deletion safeguard for ${itemToDelete.itemCode}` : ''}
+        maxWidth="max-w-md"
+      >
+        <div className="space-y-4">
+          {deleteError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+          )}
+
+          {itemToDelete && (
+            <>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Are you sure you want to permanently delete <strong className="text-slate-900">{itemToDelete.name}</strong> (<span className="font-mono text-eec-primary">{itemToDelete.itemCode}</span>) from the corporate asset registry?
+              </p>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  Administrative Safeguard Notice:
+                </p>
+                <p className="text-[11px] text-amber-700 leading-relaxed">
+                  Only system administrators can delete records. Assets currently assigned to personnel cannot be deleted until a return workflow is completed. This action is irreversible.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => {
+                    setIsDeleteModalOpen(false);
+                    setItemToDelete(null);
+                    setDeleteError(null);
+                  }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={handleDeleteResource}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {deleting ? 'Deleting...' : 'Confirm Permanent Deletion'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );
