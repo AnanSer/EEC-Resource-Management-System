@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { UserRole, Employee } from '../types';
-import { MOCK_EMPLOYEES } from '../mock/employees.mock';
+import api from '../lib/axios';
 
 export interface RoleMeta {
   role: UserRole;
@@ -17,31 +17,163 @@ export const AUTH_ROLES: RoleMeta[] = [
   { role: 'EMPLOYEE', label: 'Engineer / Field Officer', description: 'View assigned items, request new resources, and report issues', badgeColor: 'bg-slate-100 text-slate-800 border-slate-200' },
 ];
 
+function getRoleDesignation(role: string): string {
+  switch (role) {
+    case 'ADMIN': return 'System Administrator & Auditor';
+    case 'STORE_KEEPER': return 'Chief Logistics & Store Officer';
+    case 'IT_TECHNICIAN': return 'Hardware & Systems Specialist';
+    case 'DEPARTMENT_MANAGER': return 'Engineering Directorate Manager';
+    case 'EMPLOYEE':
+    default:
+      return 'Project Engineer / Field Officer';
+  }
+}
+
+function mapUserToEmployee(user: any): Employee {
+  return {
+    id: user.id,
+    employeeId: `EEC-EMP-${user.id.slice(0, 4).toUpperCase()}`,
+    name: user.fullName || user.name || 'EEC Personnel',
+    email: user.email,
+    phone: '+251 91 123 4567',
+    departmentId: 'dept-eng-01',
+    departmentName: 'Engineering Directorate',
+    designation: getRoleDesignation(user.role),
+    role: user.role as UserRole,
+    isActive: user.status === 'APPROVED' || user.status === 'ACTIVE',
+    hireDate: '2023-01-15',
+  };
+}
+
+const EMPTY_USER: Employee = {
+  id: '',
+  employeeId: '',
+  name: 'EEC Guest',
+  email: '',
+  phone: '',
+  departmentId: 'dept-eng-01',
+  departmentName: 'Engineering Directorate',
+  designation: 'Staff',
+  role: 'EMPLOYEE',
+  isActive: false,
+  hireDate: '',
+};
+
 interface AuthContextType {
   currentUser: Employee;
   currentRole: UserRole;
-  switchRole: (role: UserRole) => void;
+  isAuthenticated: boolean;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; code?: string }>;
+  register: (fullName: string, email: string, password: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  logout: () => Promise<void>;
+  switchRole?: (role: UserRole) => void;
   allRoles: RoleMeta[];
 }
 
 const AuthContext = createContext<AuthContextType>({
-  currentUser: MOCK_EMPLOYEES[0],
-  currentRole: 'ADMIN',
-  switchRole: () => {},
+  currentUser: EMPTY_USER,
+  currentRole: 'EMPLOYEE',
+  isAuthenticated: false,
+  loading: true,
+  login: async () => ({ success: false }),
+  register: async () => ({ success: false }),
+  logout: async () => {},
   allRoles: AUTH_ROLES,
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [currentRole, setCurrentRole] = useState<UserRole>('ADMIN');
+  const [currentUser, setCurrentUser] = useState<Employee>(EMPTY_USER);
+  const [currentRole, setCurrentRole] = useState<UserRole>('EMPLOYEE');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const currentUser = MOCK_EMPLOYEES.find(e => e.role === currentRole) || MOCK_EMPLOYEES[0];
+  // Check existing session on application boot
+  const restoreSession = useCallback(async () => {
+    try {
+      const res = await api.get('/auth/me');
+      if (res.data?.authenticated && res.data.user) {
+        const emp = mapUserToEmployee(res.data.user);
+        setCurrentUser(emp);
+        setCurrentRole(emp.role);
+        setIsAuthenticated(true);
+      } else {
+        setCurrentUser(EMPTY_USER);
+        setIsAuthenticated(false);
+      }
+    } catch {
+      setCurrentUser(EMPTY_USER);
+      setIsAuthenticated(false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const switchRole = (role: UserRole) => {
-    setCurrentRole(role);
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
+
+  const login = async (email: string, password: string) => {
+    try {
+      const res = await api.post('/auth/login', { email, password });
+      if (res.data?.success && res.data.user) {
+        const emp = mapUserToEmployee(res.data.user);
+        setCurrentUser(emp);
+        setCurrentRole(emp.role);
+        setIsAuthenticated(true);
+        return { success: true };
+      }
+      return { success: false, error: 'Login response invalid' };
+    } catch (err: any) {
+      const errData = err.response?.data;
+      return {
+        success: false,
+        error: errData?.message || 'Authentication failed. Please check your network and credentials.',
+        code: errData?.code,
+      };
+    }
+  };
+
+  const register = async (fullName: string, email: string, password: string) => {
+    try {
+      const res = await api.post('/auth/register', { fullName, email, password });
+      return {
+        success: true,
+        message: res.data?.message || 'Registration submitted for administrator approval.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.response?.data?.message || 'Registration failed.',
+      };
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // Ignore network errors on logout
+    } finally {
+      setCurrentUser(EMPTY_USER);
+      setIsAuthenticated(false);
+      setCurrentRole('EMPLOYEE');
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, currentRole, switchRole, allRoles: AUTH_ROLES }}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        currentRole,
+        isAuthenticated,
+        loading,
+        login,
+        register,
+        logout,
+        allRoles: AUTH_ROLES,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

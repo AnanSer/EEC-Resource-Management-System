@@ -1,4 +1,4 @@
-import http from 'node:http';
+﻿import http from 'node:http';
 import dotenv from 'dotenv';
 import { Router } from './http/router';
 import { AppRequest, AppResponse } from './http/types';
@@ -110,7 +110,7 @@ export async function requestListener(req: http.IncomingMessage, res: http.Serve
 export const server = http.createServer(requestListener);
 
 // Start listening if not running in test mode
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.RMS_TEST_MODE) {
   server.listen(PORT, () => {
     console.log(`[EEC-RMS] Native Node.js HTTP server running on port ${PORT}`);
     console.log(`[EEC-RMS] Health endpoint: http://localhost:${PORT}/api/health`);
