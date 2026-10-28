@@ -1,4 +1,4 @@
-﻿import { Router } from '../http/router';
+import { Router } from '../http/router';
 import { AppRequest, AppResponse } from '../http/types';
 import { hashPassword, verifyPassword } from './password';
 import { createSession, destroySession, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from './session';
@@ -21,7 +21,7 @@ const VALID_ROLES = [
  */
 router.post('/register', async (req: AppRequest, res: AppResponse) => {
   try {
-    const { email, password, fullName } = req.body || {};
+    const { email, password, fullName, departmentId } = req.body || {};
 
     if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2) {
       return res.status(400).json({
@@ -69,6 +69,7 @@ router.post('/register', async (req: AppRequest, res: AppResponse) => {
         passwordHash,
         role: 'EMPLOYEE',
         status: 'PENDING',
+        departmentId: departmentId || null,
       },
       select: {
         id: true,
@@ -76,6 +77,7 @@ router.post('/register', async (req: AppRequest, res: AppResponse) => {
         fullName: true,
         role: true,
         status: true,
+        departmentId: true,
         createdAt: true,
       },
     });
@@ -113,6 +115,15 @@ router.post('/login', async (req: AppRequest, res: AppResponse) => {
 
     const user = await prisma.user.findUnique({
       where: { email: sanitizedEmail },
+      include: {
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+      },
     });
 
     if (!user) {
@@ -183,6 +194,8 @@ router.post('/login', async (req: AppRequest, res: AppResponse) => {
         fullName: user.fullName,
         role: user.role,
         status: user.status,
+        departmentId: user.departmentId,
+        departmentName: user.department?.name || null,
       },
     });
   } catch (err: any) {
@@ -258,6 +271,14 @@ router.get('/users', requireRole(['ADMIN']), async (req: AppRequest, res: AppRes
         fullName: true,
         role: true,
         status: true,
+        departmentId: true,
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
         createdAt: true,
         updatedAt: true,
       },
@@ -291,6 +312,14 @@ router.get('/users/pending', requireRole(['ADMIN']), async (_req: AppRequest, re
         fullName: true,
         role: true,
         status: true,
+        departmentId: true,
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
         createdAt: true,
         updatedAt: true,
       },
@@ -312,12 +341,12 @@ router.get('/users/pending', requireRole(['ADMIN']), async (_req: AppRequest, re
 
 /**
  * POST /api/auth/users/:id/approve
- * ADMIN-only endpoint to approve a pending user and assign an authorized role
+ * ADMIN-only endpoint to approve a pending user and assign an authorized role & optional department
  */
 router.post('/users/:id/approve', requireRole(['ADMIN']), async (req: AppRequest, res: AppResponse) => {
   try {
     const userId = req.params.id;
-    const { role } = req.body || {};
+    const { role, departmentId } = req.body || {};
 
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
@@ -345,11 +374,22 @@ router.post('/users/:id/approve', requireRole(['ADMIN']), async (req: AppRequest
       });
     }
 
+    if (departmentId) {
+      const dept = await prisma.department.findUnique({ where: { id: departmentId } });
+      if (!dept) {
+        return res.status(400).json({
+          success: false,
+          message: `Department with ID '${departmentId}' does not exist`,
+        });
+      }
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
         status: 'APPROVED',
         role: assignedRole,
+        ...(departmentId ? { departmentId } : {}),
       },
       select: {
         id: true,
@@ -357,6 +397,14 @@ router.post('/users/:id/approve', requireRole(['ADMIN']), async (req: AppRequest
         fullName: true,
         role: true,
         status: true,
+        departmentId: true,
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
         updatedAt: true,
       },
     });

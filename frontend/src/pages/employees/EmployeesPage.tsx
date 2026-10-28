@@ -11,7 +11,10 @@ import {
   Mail, 
   Phone, 
   Building2, 
-  Check
+  Check,
+  AlertCircle,
+  RefreshCw,
+  UserCheck
 } from 'lucide-react';
 
 export const EmployeesPage: React.FC = () => {
@@ -19,6 +22,7 @@ export const EmployeesPage: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
@@ -28,25 +32,29 @@ export const EmployeesPage: React.FC = () => {
   const [designation, setDesignation] = useState('');
   const [role, setRole] = useState<UserRole>('EMPLOYEE');
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const isDepartmentManager = currentRole === 'DEPARTMENT_MANAGER';
+  const isAdmin = currentRole === 'ADMIN';
 
   const loadData = async () => {
     setLoading(true);
+    setApiError(null);
     try {
       const scope = { role: currentRole, departmentId: currentUser.departmentId };
       const [eList, dList] = await Promise.all([
         employeeService.getAll(scope),
-        departmentService.getAll(scope)
+        departmentService.getAll(scope),
       ]);
       setEmployees(eList);
       setDepartments(dList);
       if (dList.length > 0 && !departmentId) {
         setDepartmentId(isDepartmentManager ? currentUser.departmentId : dList[0].id);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setApiError(err.response?.data?.message || err.message || 'Failed to load employee directory.');
     } finally {
       setLoading(false);
     }
@@ -59,6 +67,7 @@ export const EmployeesPage: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
+    setFormError(null);
     try {
       const targetDeptId = isDepartmentManager ? currentUser.departmentId : departmentId;
       const dept = departments.find(d => d.id === targetDeptId);
@@ -72,7 +81,7 @@ export const EmployeesPage: React.FC = () => {
         designation,
         role,
         isActive: true,
-        hireDate: new Date().toISOString().split('T')[0]
+        hireDate: new Date().toISOString().split('T')[0],
       });
 
       setToastMessage(`Successfully registered ${name} into the corporate directory.`);
@@ -82,8 +91,8 @@ export const EmployeesPage: React.FC = () => {
       setDesignation('');
       loadData();
       setTimeout(() => setToastMessage(null), 4000);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setFormError(err.response?.data?.message || err.message || 'Failed to register employee.');
     } finally {
       setSaving(false);
     }
@@ -104,19 +113,35 @@ export const EmployeesPage: React.FC = () => {
             ? `Department personnel roster for ${currentUser.departmentName || 'your directorate'}`
             : "Authorized corporate personnel, roles, contact profiles, and departmental assignments"
         }
+        breadcrumbs={[
+          { label: 'RMS', href: '/dashboard' },
+          { label: 'Employees' }
+        ]}
       >
-        <button
-          onClick={() => {
-            if (isDepartmentManager) {
-              setDepartmentId(currentUser.departmentId);
-            }
-            setIsModalOpen(true);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Register Staff Member</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadData}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Refresh</span>
+          </button>
+          {(isAdmin || isDepartmentManager) && (
+            <button
+              onClick={() => {
+                if (isDepartmentManager) {
+                  setDepartmentId(currentUser.departmentId);
+                }
+                setFormError(null);
+                setIsModalOpen(true);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl text-xs font-semibold shadow-sm transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Register Staff Member</span>
+            </button>
+          )}
+        </div>
       </PageHeader>
 
       {/* Department-Scope Notice Banner for Department Managers */}
@@ -135,10 +160,26 @@ export const EmployeesPage: React.FC = () => {
         </div>
       )}
 
+      {/* API Error Alert */}
+      {apiError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+            <span>{apiError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-3 py-1 bg-rose-100 hover:bg-rose-200 text-rose-800 rounded-lg text-xs font-bold transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {toastMessage && (
-        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 animate-fadeIn">
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs flex items-center gap-2 animate-fadeIn shadow-sm">
           <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-          <span>{toastMessage}</span>
+          <span className="font-medium">{toastMessage}</span>
         </div>
       )}
 
@@ -163,6 +204,16 @@ export const EmployeesPage: React.FC = () => {
         <div className="flex items-center justify-center min-h-[300px]">
           <div className="w-8 h-8 border-4 border-eec-primary border-t-transparent rounded-full animate-spin"></div>
         </div>
+      ) : filteredEmployees.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center shadow-card">
+          <UserCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-base font-bold text-slate-800">No Personnel Found</h3>
+          <p className="text-xs text-slate-500 mt-1">
+            {searchQuery
+              ? `No staff records matched the search term "${searchQuery}".`
+              : 'No personnel registered under this directorate yet.'}
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredEmployees.map((emp) => (
@@ -174,7 +225,7 @@ export const EmployeesPage: React.FC = () => {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-full bg-eec-primary text-white flex items-center justify-center font-bold text-xs">
-                      {emp.name.split(' ').map(n => n[0]).join('')}
+                      {emp.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                     </div>
                     <div>
                       <h3 className="font-bold text-slate-900 text-sm leading-tight">{emp.name}</h3>
@@ -199,7 +250,7 @@ export const EmployeesPage: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2 text-slate-600">
                     <Phone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                    <span>{emp.phone}</span>
+                    <span>{emp.phone || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -223,6 +274,13 @@ export const EmployeesPage: React.FC = () => {
         title="Add New Personnel Record"
         subtitle="Register engineering staff for resource assignments and requisitions"
       >
+        {formError && (
+          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{formError}</span>
+          </div>
+        )}
+
         <form onSubmit={handleCreate} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

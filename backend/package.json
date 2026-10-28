@@ -9,7 +9,8 @@
     "type-check": "tsc --noEmit",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "test": "tsx tests/departments_employees.test.ts"
   },
   "keywords": [
     "eec",

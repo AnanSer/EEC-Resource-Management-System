@@ -1,6 +1,6 @@
 // Ethiopian Engineering Corporation (EEC)
 // Resource Management System (RMS)
-// Prisma Schema - Phase 1: Foundation Baseline
+// Prisma Schema - Phase 2: Departments & Employees
 
 generator client {
   provider = "prisma-client-js"
@@ -18,20 +18,62 @@ model SystemHealth {
   createdAt DateTime @default(now())
 }
 
+// Corporate Directorate / Department Model
+model Department {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  code        String     @unique
+  description String?
+  managerName String?
+  location    String?
+  budgetCode  String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  users       User[]
+  employees   Employee[]
+
+  @@map("departments")
+}
+
 // Baseline Custom Auth: User Model
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
+  id           String      @id @default(uuid())
+  email        String      @unique
   passwordHash String
   fullName     String
-  role         String    @default("EMPLOYEE")
-  status       String    @default("PENDING")
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  role         String      @default("EMPLOYEE")
+  status       String      @default("PENDING")
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  employee     Employee?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   sessions     Session[]
 
   @@map("users")
+}
+
+// Personnel / Employee Model
+model Employee {
+  id           String     @id @default(uuid())
+  employeeId   String     @unique
+  name         String
+  email        String     @unique
+  phone        String?
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  designation  String
+  role         String     @default("EMPLOYEE")
+  isActive     Boolean    @default(true)
+  hireDate     DateTime   @default(now())
+  userId       String?    @unique
+  user         User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@map("employees")
 }
 
 // Baseline Custom Auth: Session Model (HTTP-only session cookies)

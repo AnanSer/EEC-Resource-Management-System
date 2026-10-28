@@ -1,4 +1,4 @@
-﻿import http from 'node:http';
+import http from 'node:http';
 import dotenv from 'dotenv';
 import { Router } from './http/router';
 import { AppRequest, AppResponse } from './http/types';
@@ -8,6 +8,8 @@ import { parseCookies } from './http/cookies';
 import { parseRequestBody } from './http/bodyParser';
 import { sessionMiddleware } from './auth/auth.middleware';
 import authRouter from './auth/auth.routes';
+import departmentRouter from './departments/department.routes';
+import employeeRouter from './employees/employee.routes';
 
 // Load environment variables
 dotenv.config();
@@ -37,8 +39,10 @@ router.get('/api/health', (_req: AppRequest, res: AppResponse) => {
   });
 });
 
-// Mount authentication sub-router
+// Mount modular sub-routers
 router.mount('/api/auth', authRouter);
+router.mount('/api/departments', departmentRouter);
+router.mount('/api/employees', employeeRouter);
 
 // Root informational endpoint
 router.get('/', (_req: AppRequest, res: AppResponse) => {

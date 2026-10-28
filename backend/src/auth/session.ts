@@ -10,6 +10,8 @@ export interface SessionUser {
   fullName: string;
   role: string;
   status: string;
+  departmentId?: string | null;
+  departmentName?: string | null;
 }
 
 /**
@@ -51,6 +53,14 @@ export async function validateSession(token: string): Promise<{ session: { id: s
           fullName: true,
           role: true,
           status: true,
+          departmentId: true,
+          department: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
         },
       },
     },
@@ -64,12 +74,22 @@ export async function validateSession(token: string): Promise<{ session: { id: s
     return null;
   }
 
+  const user: SessionUser = {
+    id: record.user.id,
+    email: record.user.email,
+    fullName: record.user.fullName,
+    role: record.user.role,
+    status: record.user.status,
+    departmentId: record.user.departmentId,
+    departmentName: record.user.department?.name || null,
+  };
+
   return {
     session: {
       id: record.id,
       expiresAt: record.expiresAt,
     },
-    user: record.user,
+    user,
   };
 }
 
