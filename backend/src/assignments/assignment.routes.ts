@@ -158,6 +158,97 @@ router.get('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
 });
 
 /**
+ * GET /api/assignments/my-custody
+ * Retrieve active resources and assignment records currently in custody of the logged-in employee
+ */
+router.get('/my-custody', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const user = req.user!;
+    let employee = null;
+    if (user.employeeRecordId) {
+      employee = await prisma.employee.findUnique({
+        where: { id: user.employeeRecordId },
+        include: { department: true },
+      });
+    }
+    if (!employee) {
+      employee = await prisma.employee.findFirst({
+        where: {
+          OR: [
+            { userId: user.id },
+            { email: user.email },
+          ],
+        },
+        include: { department: true },
+      });
+    }
+
+    if (!employee) {
+      return res.status(200).json({
+        success: true,
+        employee: null,
+        activeHoldings: [],
+        historicalHoldings: [],
+        totalActive: 0,
+      });
+    }
+
+    const [activeAssignments, pastAssignments] = await Promise.all([
+      prisma.resourceAssignment.findMany({
+        where: {
+          employeeId: employee.id,
+          isCurrent: true,
+          status: 'ACTIVE',
+        },
+        include: {
+          resource: true,
+          department: true,
+          employee: true,
+        },
+        orderBy: { assignedAt: 'desc' },
+      }),
+      prisma.resourceAssignment.findMany({
+        where: {
+          employeeId: employee.id,
+          OR: [
+            { isCurrent: false },
+            { status: { in: ['RETURNED', 'TRANSFERRED'] } },
+          ],
+        },
+        include: {
+          resource: true,
+          department: true,
+          employee: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      employee: {
+        id: employee.id,
+        employeeId: employee.employeeId,
+        name: employee.name,
+        designation: employee.designation,
+        email: employee.email,
+        departmentName: employee.department?.name,
+      },
+      activeHoldings: activeAssignments.map(formatAssignment),
+      historicalHoldings: pastAssignments.map(formatAssignment),
+      totalActive: activeAssignments.length,
+    });
+  } catch (err) {
+    console.error('[GET /api/assignments/my-custody Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve personal custody records',
+    });
+  }
+});
+
+/**
  * GET /api/assignments/history/:resourceId
  * Complete custody timeline and assignment/transfer records for a specific resource
  */
@@ -816,59 +907,119 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
       });
     }
 
-    const { resourceId, condition, returnLocation, notes } = req.body || {};
+    const { resourceId, assignmentId, employeeId, condition, returnLocation, notes } = req.body || {};
 
-    if (!resourceId || typeof resourceId !== 'string') {
+    if ((!resourceId || typeof resourceId !== 'string') && (!assignmentId || typeof assignmentId !== 'string')) {
       return res.status(400).json({
         success: false,
-        message: 'Resource ID is required',
+        message: 'Resource ID or Assignment ID is required to process return',
       });
     }
 
-    const resource = await prisma.resource.findUnique({
-      where: { id: resourceId },
-      include: {
-        department: true,
-        currentAssignee: true,
-      },
-    });
+    let targetResource: any = null;
+    let currentAssignment: any = null;
 
-    if (!resource) {
+    // 1. Resolve by assignment ID if provided
+    if (assignmentId && typeof assignmentId === 'string') {
+      currentAssignment = await prisma.resourceAssignment.findUnique({
+        where: { id: assignmentId.trim() },
+        include: {
+          resource: { include: { department: true, currentAssignee: true } },
+          employee: true,
+          department: true,
+        },
+      });
+      if (currentAssignment) {
+        targetResource = currentAssignment.resource;
+      }
+    }
+
+    // 2. Resolve by resource ID if not yet resolved
+    if (!targetResource && resourceId && typeof resourceId !== 'string' ? false : !targetResource && resourceId) {
+      const cleanId = String(resourceId).trim();
+      targetResource = await prisma.resource.findUnique({
+        where: { id: cleanId },
+        include: {
+          department: true,
+          currentAssignee: true,
+        },
+      });
+
+      // Check if client passed an assignment ID in resourceId field
+      if (!targetResource) {
+        currentAssignment = await prisma.resourceAssignment.findUnique({
+          where: { id: cleanId },
+          include: {
+            resource: { include: { department: true, currentAssignee: true } },
+            employee: true,
+            department: true,
+          },
+        });
+        if (currentAssignment) {
+          targetResource = currentAssignment.resource;
+        }
+      }
+    }
+
+    if (!targetResource) {
       return res.status(404).json({
         success: false,
-        message: `Resource with ID '${resourceId}' not found in registry`,
+        message: `Resource with ID '${resourceId || assignmentId}' not found in registry`,
       });
     }
 
-    if (resource.status !== 'ASSIGNED') {
+    // Validate resource is currently ASSIGNED
+    if (targetResource.status !== 'ASSIGNED') {
       return res.status(400).json({
         success: false,
-        message: `Resource '${resource.itemCode}' is currently '${resource.status}'. Only ASSIGNED resources can be returned.`,
+        message: `Resource '${targetResource.itemCode}' is currently '${targetResource.status}'. Only ASSIGNED resources can be returned.`,
       });
     }
 
-    const currentAssignment = await prisma.resourceAssignment.findFirst({
-      where: {
-        resourceId,
-        isCurrent: true,
-        status: 'ACTIVE',
-      },
-      include: {
-        employee: true,
-        department: true,
-      },
-    });
+    // Find active assignment if not resolved yet
+    if (!currentAssignment) {
+      currentAssignment = await prisma.resourceAssignment.findFirst({
+        where: {
+          resourceId: targetResource.id,
+          isCurrent: true,
+          status: 'ACTIVE',
+        },
+        include: {
+          employee: true,
+          department: true,
+        },
+      });
+    }
 
     if (!currentAssignment) {
       return res.status(400).json({
         success: false,
-        message: `No active assignment found for resource '${resource.itemCode}'`,
+        message: `No active assignment found for resource '${targetResource.itemCode}'`,
       });
+    }
+
+    // Prevent duplicate returns
+    if (currentAssignment.status !== 'ACTIVE' || !currentAssignment.isCurrent) {
+      return res.status(400).json({
+        success: false,
+        message: `Assignment '${currentAssignment.assignmentNumber}' is already marked as ${currentAssignment.status}. Duplicate returns are not permitted.`,
+      });
+    }
+
+    // Prevent returning another employee's unrelated resource if an employeeId was supplied
+    if (employeeId && typeof employeeId === 'string' && employeeId.trim()) {
+      const cleanEmpId = employeeId.trim();
+      if (currentAssignment.employeeId !== cleanEmpId && targetResource.currentAssigneeId !== cleanEmpId) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot return resource: The asset is currently assigned to employee '${currentAssignment.employee?.name || 'another custodian'}', not the specified employee.`,
+        });
+      }
     }
 
     // Role check: Department Manager can only process return if resource belongs to their department
     if (userRole === 'DEPARTMENT_MANAGER') {
-      if (!userDeptId || resource.departmentId !== userDeptId) {
+      if (!userDeptId || targetResource.departmentId !== userDeptId) {
         return res.status(403).json({
           success: false,
           message: 'Forbidden: Department managers may only process returns for resources belonging to their own directorate',
@@ -877,7 +1028,7 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
     }
 
     // Validate condition if provided
-    let finalCondition = resource.condition;
+    let finalCondition = targetResource.condition;
     if (condition) {
       if (!VALID_CONDITIONS.includes(condition)) {
         return res.status(400).json({
@@ -890,7 +1041,7 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
 
     // Determine new status based on condition
     let newStatus = 'AVAILABLE';
-    if (finalCondition === 'NEEDS_REPAIR' || finalCondition === 'DAMGED') {
+    if (finalCondition === 'NEEDS_REPAIR' || finalCondition === 'DAMAGED') {
       newStatus = 'MAINTENANCE';
     } else if (finalCondition === 'RETIRED') {
       newStatus = 'RETIRED';
@@ -920,9 +1071,27 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
         },
       });
 
+      // Also close any other active assignments on the same resource
+      await tx.resourceAssignment.updateMany({
+        where: {
+          resourceId: targetResource.id,
+          id: { not: currentAssignment.id },
+          isCurrent: true,
+        },
+        data: {
+          isCurrent: false,
+          status: 'RETURNED',
+          returnedAt: now,
+          returnCondition: finalCondition,
+          returnLocation: finalLocation,
+          returnReceivedByName: user.fullName || `${user.email} (${userRole})`,
+          returnReceivedById: user.id,
+        },
+      });
+
       // 2. Update resource back to AVAILABLE (or MAINTENANCE / RETIRED)
       const updatedResource = await tx.resource.update({
-        where: { id: resource.id },
+        where: { id: targetResource.id },
         data: {
           status: newStatus,
           condition: finalCondition,
@@ -940,7 +1109,7 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
 
     return res.status(200).json({
       success: true,
-      message: `Resource '${resource.itemCode}' successfully returned and marked as ${newStatus}`,
+      message: `Resource '${targetResource.itemCode}' successfully returned and marked as ${newStatus}`,
       assignment: formatAssignment(result.closedAssignment),
       resource: {
         id: result.updatedResource.id,

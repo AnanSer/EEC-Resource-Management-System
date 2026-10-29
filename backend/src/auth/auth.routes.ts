@@ -123,6 +123,7 @@ router.post('/login', async (req: AppRequest, res: AppResponse) => {
             code: true,
           },
         },
+        employee: true,
       },
     });
 
@@ -196,6 +197,17 @@ router.post('/login', async (req: AppRequest, res: AppResponse) => {
         status: user.status,
         departmentId: user.departmentId,
         departmentName: user.department?.name || null,
+        employeeRecordId: user.employee?.id || null,
+        employeeId: user.employee?.employeeId || null,
+        employee: user.employee ? {
+          id: user.employee.id,
+          employeeId: user.employee.employeeId,
+          name: user.employee.name,
+          designation: user.employee.designation,
+          phone: user.employee.phone,
+          departmentId: user.employee.departmentId,
+          isActive: user.employee.isActive,
+        } : null,
       },
     });
   } catch (err: any) {

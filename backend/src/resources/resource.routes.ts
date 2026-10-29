@@ -283,7 +283,60 @@ router.get('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
   }
 });
 
+/**
+ * GET /api/resources/my-assets
+ * Retrieve physical assets currently assigned to the logged-in employee
+ */
+router.get('/my-assets', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const user = req.user!;
+    let employee = null;
+    if (user.employeeRecordId) {
+      employee = await prisma.employee.findUnique({
+        where: { id: user.employeeRecordId },
+      });
+    }
+    if (!employee) {
+      employee = await prisma.employee.findFirst({
+        where: {
+          OR: [{ userId: user.id }, { email: user.email }],
+        },
+      });
+    }
 
+    if (!employee) {
+      return res.status(200).json({
+        success: true,
+        resources: [],
+        total: 0,
+      });
+    }
+
+    const resources = await prisma.resource.findMany({
+      where: {
+        currentAssigneeId: employee.id,
+        status: 'ASSIGNED',
+      },
+      include: {
+        department: true,
+        currentAssignee: true,
+      },
+      orderBy: { assignedAt: 'desc' },
+    });
+
+    return res.status(200).json({
+      success: true,
+      resources: resources.map(formatResource),
+      total: resources.length,
+    });
+  } catch (err) {
+    console.error('[GET /api/resources/my-assets Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve personal assigned assets',
+    });
+  }
+});
 
 router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
   try {

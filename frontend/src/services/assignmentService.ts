@@ -138,4 +138,19 @@ export const assignmentService = {
       throw new Error(msg);
     }
   },
+
+  async getMyCustody(): Promise<{
+    employee: any;
+    activeHoldings: AssetAssignment[];
+    historicalHoldings: AssetAssignment[];
+    totalActive: number;
+  }> {
+    try {
+      const res = await api.get('/assignments/my-custody');
+      return res.data;
+    } catch (err: any) {
+      console.error('[EEC-RMS] Failed to fetch personal custody holdings:', err);
+      throw err;
+    }
+  },
 };

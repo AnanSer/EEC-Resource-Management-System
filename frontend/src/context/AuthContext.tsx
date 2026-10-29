@@ -30,17 +30,18 @@ function getRoleDesignation(role: string): string {
 }
 
 function mapUserToEmployee(user: any): Employee {
+  const emp = user.employee;
   return {
-    id: user.id,
-    employeeId: `EEC-EMP-${user.id.slice(0, 4).toUpperCase()}`,
-    name: user.fullName || user.name || 'EEC Personnel',
-    email: user.email,
-    phone: '+251 91 123 4567',
-    departmentId: user.departmentId || 'dept-eng-01',
+    id: emp?.id || user.id,
+    employeeId: emp?.employeeId || user.employeeId || `EEC-EMP-${user.id.slice(0, 4).toUpperCase()}`,
+    name: emp?.name || user.fullName || user.name || 'EEC Personnel',
+    email: emp?.email || user.email,
+    phone: emp?.phone || '+251 91 123 4567',
+    departmentId: emp?.departmentId || user.departmentId || 'dept-eng-01',
     departmentName: user.departmentName || user.department?.name || 'Engineering Directorate',
-    designation: getRoleDesignation(user.role),
-    role: user.role as UserRole,
-    isActive: user.status === 'APPROVED' || user.status === 'ACTIVE',
+    designation: emp?.designation || getRoleDesignation(user.role),
+    role: (emp?.role || user.role) as UserRole,
+    isActive: emp ? emp.isActive : (user.status === 'APPROVED' || user.status === 'ACTIVE'),
     hireDate: '2023-01-15',
   };
 }

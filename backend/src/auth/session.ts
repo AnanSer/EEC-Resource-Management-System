@@ -13,6 +13,17 @@ export interface SessionUser {
   departmentId?: string | null;
   departmentName?: string | null;
   departmentCode?: string | null;
+  employeeRecordId?: string | null;
+  employeeId?: string | null;
+  employee?: {
+    id: string;
+    employeeId: string;
+    name: string;
+    designation: string;
+    phone?: string | null;
+    departmentId: string;
+    isActive: boolean;
+  } | null;
 }
 
 /**
@@ -48,13 +59,7 @@ export async function validateSession(token: string): Promise<{ session: { id: s
     where: { token },
     include: {
       user: {
-        select: {
-          id: true,
-          email: true,
-          fullName: true,
-          role: true,
-          status: true,
-          departmentId: true,
+        include: {
           department: {
             select: {
               id: true,
@@ -62,6 +67,7 @@ export async function validateSession(token: string): Promise<{ session: { id: s
               code: true,
             },
           },
+          employee: true,
         },
       },
     },
@@ -84,6 +90,17 @@ export async function validateSession(token: string): Promise<{ session: { id: s
     departmentId: record.user.departmentId,
     departmentName: record.user.department?.name || null,
     departmentCode: record.user.department?.code || null,
+    employeeRecordId: record.user.employee?.id || null,
+    employeeId: record.user.employee?.employeeId || null,
+    employee: record.user.employee ? {
+      id: record.user.employee.id,
+      employeeId: record.user.employee.employeeId,
+      name: record.user.employee.name,
+      designation: record.user.employee.designation,
+      phone: record.user.employee.phone,
+      departmentId: record.user.employee.departmentId,
+      isActive: record.user.employee.isActive,
+    } : null,
   };
 
   return {

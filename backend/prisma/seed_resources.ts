@@ -20,7 +20,7 @@ export async function seedResources() {
       manufacturer: 'Leica Geosystems',
       model: 'TS20 0.5 inch',
       serialNumber: 'LTECS-8485923',
-      status: 'AVAILABLE',
+      status: 'ASSIGNED',
       condition: 'EXCELLENT',
       location: 'Awash-Kombolcha Railway Project Site 3',
       departmentId: 'dept-103',
@@ -120,7 +120,7 @@ export async function seedResources() {
       manufacturer: 'Dell Technologies',
       model: 'Precision 7780',
       serialNumber: 'DLP7780-9928341',
-      status: 'AVAILABLE',
+      status: 'ASSIGNED',
       condition: 'EXCELLENT',
       location: 'HQ Floor 4 - Room 412',
       departmentId: 'dept-101',
@@ -154,7 +154,7 @@ export async function seedResources() {
       manufacturer: 'Cisco Systems',
       model: 'Catalyst C9300-48P',
       serialNumber: 'FOC2419U02P',
-      status: 'AVAILABLE',
+      status: 'ASSIGNED',
       condition: 'EXCELLENT',
       location: 'Central IT Server Room (HQ Floor 1)',
       departmentId: 'dept-107',
@@ -313,6 +313,28 @@ export async function seedResources() {
         specs: r.specs || null,
       },
     });
+    if (record.status === 'ASSIGNED' && record.currentAssigneeId) {
+      const activeAsgn = await prisma.resourceAssignment.findFirst({
+        where: { resourceId: record.id, isCurrent: true },
+      });
+      if (!activeAsgn) {
+        const count = await prisma.resourceAssignment.count();
+        const rand = Math.floor(1000 + Math.random() * 9000);
+        await prisma.resourceAssignment.create({
+          data: {
+            assignmentNumber: `ASGN-2026-${String(count + 1).padStart(4, '0')}-${rand}`,
+            resourceId: record.id,
+            employeeId: record.currentAssigneeId,
+            departmentId: record.departmentId,
+            assignedByName: 'Chief Store Keeper (Initial Seed)',
+            assignedAt: record.purchaseDate || new Date(),
+            purpose: record.description || 'Assigned for operational duties',
+            status: 'ACTIVE',
+            isCurrent: true,
+          },
+        });
+      }
+    }
     console.log('[EEC-RMS Seed] Resource seeded: ' + record.itemCode + ' - ' + record.name + ' (' + record.status + ')');
   }
 }

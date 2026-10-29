@@ -64,6 +64,16 @@ export const resourceService = {
     }
   },
 
+  async getMyAssets(): Promise<Resource[]> {
+    try {
+      const res = await api.get('/resources/my-assets');
+      return res.data.resources || [];
+    } catch (err: any) {
+      console.error('[EEC-RMS] Failed to fetch personal assigned resources:', err);
+      throw err;
+    }
+  },
+
   async create(resource: Omit<Resource, 'id' | 'createdAt' | 'updatedAt'>): Promise<Resource> {
     try {
       const payload: Record<string, any> = {

@@ -440,9 +440,9 @@ async function runTests() {
     assert(mgrDirectGetBud.status === 403, `Manager direct lookup of foreign resource ${foreignCode} returns 403 Forbidden`);
 
     // 8.4 Verify authorized manager CAN see and manage resources belonging to their own department
-    const mgrOwnGet = await request('GET', '/api/resources/EEC-VEHC-2022-081', { cookie: mgrCookie });
-    assert(mgrOwnGet.status === 200, 'Manager can view resource EEC-VEHC-2022-081 belonging to own department (dept-101)');
-    assert(mgrOwnGet.body?.resource?.name?.includes('Land Cruiser'), 'Resource details correctly retrieved by department manager');
+    const mgrOwnGet = await request('GET', '/api/resources/EEC-VEHC-2023-044', { cookie: mgrCookie });
+    assert(mgrOwnGet.status === 200, 'Manager can view resource EEC-VEHC-2023-044 belonging to own department (dept-101)');
+    assert(mgrOwnGet.body?.resource?.departmentId === 'dept-101', 'Resource details correctly retrieved by department manager');
 
     // Test registering a new resource inside manager's own department
     const dept101AssetCode = 'EEC-IT-TEST-' + Date.now().toString().slice(-4);

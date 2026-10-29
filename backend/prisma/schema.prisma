@@ -36,6 +36,7 @@ model Department {
   assignments ResourceAssignment[]
   transfersFrom CustodyTransfer[] @relation("TransfersFromDept")
   transfersTo   CustodyTransfer[] @relation("TransfersToDept")
+  requisitions  ResourceRequisition[]
 
   @@map("departments")
 }
@@ -78,6 +79,7 @@ model Employee {
   assignments       ResourceAssignment[]
   transfersFrom     CustodyTransfer[] @relation("TransfersFrom")
   transfersTo       CustodyTransfer[] @relation("TransfersTo")
+  requisitions      ResourceRequisition[]
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
 
@@ -126,6 +128,7 @@ model Resource {
   specs               Json?
   assignments         ResourceAssignment[]
   transfers           CustodyTransfer[]
+  requisitions        ResourceRequisition[]
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -165,6 +168,7 @@ model ResourceAssignment {
   
   transfersOut          CustodyTransfer[] @relation("TransferFromAssignment")
   transfersIn           CustodyTransfer[] @relation("TransferToAssignment")
+  requisition           ResourceRequisition?
   
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
@@ -206,4 +210,46 @@ model CustodyTransfer {
   @@index([fromEmployeeId])
   @@index([toEmployeeId])
   @@map("custody_transfers")
+}
+
+// Resource Requisition & Allocation Model
+model ResourceRequisition {
+  id                    String              @id @default(uuid())
+  requisitionNumber     String              @unique
+  requesterId           String
+  requesterName         String
+  requesterRole         String              @default("EMPLOYEE")
+  employeeId            String
+  employee              Employee            @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  departmentId          String
+  department            Department          @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  category              String
+  itemDescription       String
+  justification         String
+  urgency               String              @default("ROUTINE") // ROUTINE, URGENT, EMERGENCY_PROJECT
+  status                String              @default("PENDING") // PENDING, APPROVED, REJECTED, FULFILLED, CANCELLED
+  requiredDate          DateTime?
+  isDirectAllocation    Boolean             @default(false)
+  approvedById          String?
+  approvedByName        String?
+  approvedAt            DateTime?
+  approvalComments      String?
+  rejectionReason       String?
+  rejectedAt            DateTime?
+  fulfilledResourceId   String?
+  fulfilledResource     Resource?           @relation(fields: [fulfilledResourceId], references: [id], onDelete: SetNull)
+  fulfilledAssignmentId String?             @unique
+  fulfilledAssignment   ResourceAssignment? @relation(fields: [fulfilledAssignmentId], references: [id], onDelete: SetNull)
+  fulfilledById         String?
+  fulfilledByName       String?
+  fulfilledAt           DateTime?
+  handoverNotes         String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([employeeId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([category])
+  @@map("resource_requisitions")
 }

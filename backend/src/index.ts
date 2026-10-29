@@ -12,6 +12,7 @@ import departmentRouter from './departments/department.routes';
 import employeeRouter from './employees/employee.routes';
 import resourceRouter from './resources/resource.routes';
 import assignmentRouter from './assignments/assignment.routes';
+import requisitionRouter from './requisitions/requisition.routes';
 
 // Load environment variables
 dotenv.config();
@@ -47,6 +48,7 @@ router.mount('/api/departments', departmentRouter);
 router.mount('/api/employees', employeeRouter);
 router.mount('/api/resources', resourceRouter);
 router.mount('/api/assignments', assignmentRouter);
+router.mount('/api/requisitions', requisitionRouter);
 
 // Root informational endpoint
 router.get('/', (_req: AppRequest, res: AppResponse) => {

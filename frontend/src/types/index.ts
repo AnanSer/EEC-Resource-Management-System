@@ -219,6 +219,8 @@ export interface ResourceRequisition {
   requesterId: string;
   requesterName: string;
   requesterRole: UserRole;
+  employeeId?: string;
+  employeeName?: string;
   departmentId: string;
   departmentName: string;
   category: ResourceCategory;
@@ -227,9 +229,12 @@ export interface ResourceRequisition {
   urgency: 'ROUTINE' | 'URGENT' | 'EMERGENCY_PROJECT';
   status: RequisitionStatus;
   requiredDate: string;
+  isDirectAllocation?: boolean;
   approvedBy?: string;
   approvedAt?: string;
+  approvalComments?: string;
   rejectionReason?: string;
+  rejectedAt?: string;
   fulfilledResourceId?: string;
   fulfilledResourceName?: string;
   fulfilledResourceCode?: string;

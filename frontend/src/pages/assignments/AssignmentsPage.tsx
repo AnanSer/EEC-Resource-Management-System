@@ -89,6 +89,11 @@ export const AssignmentsPage: React.FC = () => {
         const other = eligibleEmps.filter(e => e.id !== assigned[0].currentAssigneeId);
         if (other.length > 0) setTransferNewEmpId(other[0].id);
       }
+      if (assigned.length > 0 && !returnResourceId) {
+        setReturnResourceId(assigned[0].id);
+        setReturnCondition(assigned[0].condition);
+        setReturnLocation(assigned[0].location || 'Central Store - Kersa');
+      }
       if (eligibleEmps.length > 0 && !selectedEmpId) {
         setSelectedEmpId(eligibleEmps[0].id);
       }
