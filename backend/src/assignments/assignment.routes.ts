@@ -580,6 +580,20 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       });
     }
 
+    // Validate resource is not undergoing maintenance
+    const activeMaintenance = await prisma.maintenanceRequest.findFirst({
+      where: {
+        resourceId: resource.id,
+        status: { in: ['SUBMITTED', 'APPROVED', 'IN_PROGRESS', 'ON_HOLD'] },
+      },
+    });
+    if (activeMaintenance) {
+      return res.status(400).json({
+        success: false,
+        message: `Resource '${resource.itemCode}' is currently undergoing maintenance/repair (${activeMaintenance.requestNumber}) and cannot be assigned until servicing is completed.`,
+      });
+    }
+
     // Check duplicate active assignment
     const existingActive = await prisma.resourceAssignment.findFirst({
       where: {
@@ -756,6 +770,20 @@ router.post('/transfer', requireAuth, async (req: AppRequest, res: AppResponse) 
       return res.status(400).json({
         success: false,
         message: `Resource '${resource.itemCode}' is currently '${resource.status}'. Only ASSIGNED resources can be transferred.`,
+      });
+    }
+
+    // Validate resource is not undergoing maintenance
+    const activeMaintenance = await prisma.maintenanceRequest.findFirst({
+      where: {
+        resourceId: resource.id,
+        status: { in: ['SUBMITTED', 'APPROVED', 'IN_PROGRESS', 'ON_HOLD'] },
+      },
+    });
+    if (activeMaintenance) {
+      return res.status(400).json({
+        success: false,
+        message: `Resource '${resource.itemCode}' is currently undergoing maintenance/repair (${activeMaintenance.requestNumber}) and cannot be transferred until servicing is completed.`,
       });
     }
 

@@ -289,26 +289,81 @@ export interface AssetReturnRecord {
   createdAt: string;
 }
 
+export type MaintenanceStatus = 
+  | 'SUBMITTED' 
+  | 'APPROVED' 
+  | 'IN_PROGRESS' 
+  | 'ON_HOLD' 
+  | 'COMPLETED' 
+  | 'REJECTED'
+  | 'OPEN'
+  | 'TESTING'
+  | 'CANCELLED';
+
+export interface MaintenanceLogEntry {
+  id: string;
+  fromStatus?: string;
+  toStatus: string;
+  action: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface MaintenanceTicket {
   id: string;
-  ticketNumber: string;
+  requestNumber?: string;
+  ticketNumber?: string;
   resourceId: string;
   resourceName: string;
   resourceCode: string;
-  category: ResourceCategory;
+  category?: ResourceCategory;
+  resourceCategory?: ResourceCategory;
+  resourceStatus?: ResourceStatus;
+  resourceCondition?: ResourceCondition;
+  departmentId?: string;
+  departmentName?: string;
+  departmentCode?: string;
+  reportedById?: string;
+  reportedByName?: string;
+  reportedByRole?: string;
+  reportedBy?: string;
+  assignedTechnicianId?: string;
+  assignedTechnicianName?: string;
+  assignedTechnician?: string;
   title: string;
   description: string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-  status: 'OPEN' | 'IN_PROGRESS' | 'TESTING' | 'COMPLETED' | 'CANCELLED';
-  reportedBy: string;
-  assignedTechnician?: string;
-  estimatedCostETB?: number;
-  actualCostETB?: number;
+  status: MaintenanceStatus;
+  reportedDate?: string;
+  reviewedById?: string;
+  reviewedByName?: string;
+  reviewedAt?: string;
+  reviewComments?: string;
+  rejectionReason?: string;
+  startedAt?: string;
   startDate?: string;
   completedAt?: string;
+  diagnosis?: string;
+  repairActions?: string;
+  partsReplaced?: string;
+  estimatedCostETB?: number;
+  actualCostETB?: number;
+  resolutionNotes?: string;
+  outcome?: string;
+  custodyAction?: string;
+  custodianIdAtRequest?: string;
+  custodianNameAtRequest?: string;
+  currentAssigneeId?: string;
+  currentAssigneeName?: string;
   serviceProvider?: string;
   findings?: string;
+  logs?: MaintenanceLogEntry[];
+  inspections?: InspectionTest[];
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface InspectionTest {

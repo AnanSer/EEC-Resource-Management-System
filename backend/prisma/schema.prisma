@@ -37,6 +37,7 @@ model Department {
   transfersFrom CustodyTransfer[] @relation("TransfersFromDept")
   transfersTo   CustodyTransfer[] @relation("TransfersToDept")
   requisitions  ResourceRequisition[]
+  maintenanceRequests MaintenanceRequest[]
 
   @@map("departments")
 }
@@ -129,6 +130,8 @@ model Resource {
   assignments         ResourceAssignment[]
   transfers           CustodyTransfer[]
   requisitions        ResourceRequisition[]
+  maintenanceRequests MaintenanceRequest[]
+  maintenanceInspections MaintenanceInspection[]
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -252,4 +255,93 @@ model ResourceRequisition {
   @@index([status])
   @@index([category])
   @@map("resource_requisitions")
+}
+
+// Maintenance Management Models
+model MaintenanceRequest {
+  id                      String                  @id @default(uuid())
+  requestNumber           String                  @unique // e.g. MNT-2026-0001
+  resourceId              String
+  resource                Resource                @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+  departmentId            String
+  department              Department              @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  reportedById            String
+  reportedByName          String
+  reportedByRole          String                  @default("EMPLOYEE")
+  assignedTechnicianId    String?
+  assignedTechnicianName  String?
+  title                   String
+  description             String
+  priority                String                  @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  status                  String                  @default("SUBMITTED") // SUBMITTED, APPROVED, IN_PROGRESS, ON_HOLD, COMPLETED, REJECTED
+  reportedDate            DateTime                @default(now())
+  reviewedById            String?
+  reviewedByName          String?
+  reviewedAt              DateTime?
+  reviewComments          String?
+  rejectionReason         String?
+  startedAt               DateTime?
+  completedAt             DateTime?
+  diagnosis               String?
+  repairActions           String?
+  partsReplaced           String?
+  estimatedCostETB        Float?
+  actualCostETB           Float?
+  resolutionNotes         String?
+  outcome                 String?                 // REPAIRED_FIT_FOR_USE, BEYOND_ECONOMIC_REPAIR, DISPOSED
+  custodyAction           String?                 // RETURNED_TO_CUSTODIAN, RETURNED_TO_AVAILABLE, DECOMMISSIONED
+  custodianIdAtRequest    String?                 // Preserved active custodian ID at time of request
+  custodianNameAtRequest  String?                 // Preserved active custodian name at time of request
+
+  logs                    MaintenanceLog[]
+  inspections             MaintenanceInspection[]
+
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  @@index([resourceId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([priority])
+  @@index([reportedById])
+  @@index([assignedTechnicianId])
+  @@map("maintenance_requests")
+}
+
+model MaintenanceLog {
+  id                    String              @id @default(uuid())
+  maintenanceRequestId  String
+  maintenanceRequest    MaintenanceRequest  @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+  fromStatus            String?
+  toStatus              String
+  action                String              // SUBMITTED, APPROVED, REJECTED, ASSIGNED, STARTED, PUT_ON_HOLD, RESUMED, COMPLETED
+  actorId               String
+  actorName             String
+  actorRole             String
+  notes                 String?
+  createdAt             DateTime            @default(now())
+
+  @@index([maintenanceRequestId])
+  @@map("maintenance_logs")
+}
+
+model MaintenanceInspection {
+  id                    String              @id @default(uuid())
+  maintenanceRequestId  String?
+  maintenanceRequest    MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id], onDelete: SetNull)
+  resourceId            String
+  resource              Resource            @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+  inspectionType        String              @default("MAINTENANCE_QA") // MAINTENANCE_QA, CALIBRATION, ROADWORTHINESS_BOLO, HYDRAULIC, SAFETY_AUDIT
+  passed                Boolean
+  findings              String
+  conductedById         String?
+  conductedByName       String
+  certificationNumber   String?
+  remarks               String?
+  inspectedAt           DateTime            @default(now())
+  createdAt             DateTime            @default(now())
+
+  @@index([maintenanceRequestId])
+  @@index([resourceId])
+  @@map("maintenance_inspections")
 }
