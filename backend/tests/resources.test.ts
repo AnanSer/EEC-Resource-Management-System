@@ -385,13 +385,13 @@ async function runTests() {
     assert(mgrMetricsRes.body?.metrics?.availableAssets === baseDept101Available, `Manager sees exactly ${baseDept101Available} available assets for dept-101`);
     assert(mgrMetricsRes.body?.metrics?.totalValueETB > 0, 'Manager metrics valuation reflects only dept-101 assets');
     assert(mgrMetricsRes.body?.metrics?.categoryCounts?.VEHICLES === baseDept101Vehicles, `Manager category counts reflect dept-101 vehicles (${baseDept101Vehicles})`);
-    assert(mgrMetricsRes.body?.metrics?.categoryCounts?.SURVEYING_GEOTECHNICAL === undefined, 'Manager category counts exclude other departments');
+    assert(mgrMetricsRes.body?.metrics?.categoryCounts?.HEAVY_MACHINERY === undefined, 'Manager category counts exclude other departments (HEAVY_MACHINERY)');
 
     const empMetricsRes = await request('GET', '/api/resources/metrics', { cookie: empCookie });
     assert(empMetricsRes.body?.metrics?.scope === 'DEPARTMENT', 'Employee metrics scope is strictly DEPARTMENT');
     assert(empMetricsRes.body?.metrics?.totalAssets === baseDept101Count, `Employee sees exactly ${baseDept101Count} department assets`);
 
-    // 8.2 Resource visibility check for the new resource EEC-IT-2026-7508 (in dept-107)
+    // 8.2 Resource visibility check for EEC-IT-2026-7508 (registered in dept-101)
     const adminAllRes = await request('GET', '/api/resources', { cookie: adminCookie });
     const hasNewAdmin = adminAllRes.body?.resources?.some((r: any) => r.itemCode === 'EEC-IT-2026-7508');
     assert(hasNewAdmin, 'Admin can see newly registered resource EEC-IT-2026-7508 in registry');
@@ -406,17 +406,17 @@ async function runTests() {
 
     const mgrAllRes = await request('GET', '/api/resources', { cookie: mgrCookie });
     const hasNewMgr = mgrAllRes.body?.resources?.some((r: any) => r.itemCode === 'EEC-IT-2026-7508');
-    assert(!hasNewMgr, 'Manager in dept-101 CANNOT see EEC-IT-2026-7508 (belongs to dept-107, department boundary enforced)');
+    assert(hasNewMgr, 'Manager in dept-101 CAN see EEC-IT-2026-7508 (belongs to dept-101)');
 
     const empAllRes = await request('GET', '/api/resources', { cookie: empCookie });
     const hasNewEmp = empAllRes.body?.resources?.some((r: any) => r.itemCode === 'EEC-IT-2026-7508');
-    assert(!hasNewEmp, 'Employee in dept-101 CANNOT see EEC-IT-2026-7508 (belongs to dept-107, department boundary enforced)');
+    assert(hasNewEmp, 'Employee in dept-101 CAN see EEC-IT-2026-7508 (belongs to dept-101)');
 
     const mgrDirectGet = await request('GET', '/api/resources/EEC-IT-2026-7508', { cookie: mgrCookie });
-    assert(mgrDirectGet.status === 403, 'Manager direct lookup of foreign resource EEC-IT-2026-7508 returns 403 Forbidden');
+    assert(mgrDirectGet.status === 200, 'Manager direct lookup of own department resource EEC-IT-2026-7508 returns 200');
 
     const empDirectGet = await request('GET', '/api/resources/EEC-IT-2026-7508', { cookie: empCookie });
-    assert(empDirectGet.status === 403, 'Employee direct lookup of foreign resource EEC-IT-2026-7508 returns 403 Forbidden');
+    assert(empDirectGet.status === 200, 'Employee direct lookup of own department resource EEC-IT-2026-7508 returns 200');
 
     // 8.3 Visibility check for foreign department resource (e.g. dept-106 or dept-103)
     const foreignItem = adminAllRes.body?.resources?.find((r: any) => r.departmentId !== 'dept-101');

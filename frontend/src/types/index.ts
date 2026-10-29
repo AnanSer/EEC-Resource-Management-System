@@ -150,8 +150,29 @@ export interface Resource {
   vehicleSpecs?: VehicleSpecs;
   machinerySpecs?: HeavyMachinerySpecs;
   surveyingSpecs?: SurveyingSpecs;
+  historicalContext?: HistoricalAssignmentContext;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface HistoricalAssignmentContext {
+  isHistoricalAccess: boolean;
+  assignmentNumber?: string;
+  historicalAssigneeId?: string;
+  historicalAssigneeName?: string;
+  assignmentDepartmentId?: string;
+  assignmentDepartmentName?: string;
+  assignedAt?: string;
+  returnedAt?: string;
+  expectedReturnDate?: string;
+  purpose?: string;
+  conclusionStatus?: string;
+  conditionOnAssignment?: ResourceCondition;
+  conditionOnReturn?: ResourceCondition;
+  returnLocation?: string;
+  returnNotes?: string;
+  returnReceivedByName?: string;
+  isCurrentCustodian: boolean;
 }
 
 export interface AssetAssignment {

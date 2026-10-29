@@ -341,11 +341,12 @@ router.get('/my-assets', requireAuth, async (req: AppRequest, res: AppResponse) 
 router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
   try {
     const targetId = req.params!.id;
-    const userRole = req.user!.role;
-    const userDeptId = req.user!.departmentId;
+    const user = req.user!;
+    const userRole = user.role;
+    const userDeptId = user.departmentId;
 
-    // Find by ID or itemCode
-    const resource = await prisma.resource.findFirst({
+    // 1. Find by ID or itemCode
+    let resource = await prisma.resource.findFirst({
       where: {
         OR: [{ id: targetId }, { itemCode: targetId }],
       },
@@ -355,6 +356,23 @@ router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
       },
     });
 
+    // 2. If not found directly, check if targetId was an assignment ID
+    if (!resource) {
+      const asgn = await prisma.resourceAssignment.findUnique({
+        where: { id: targetId },
+        include: {
+          resource: {
+            include: {
+              department: true,
+              currentAssignee: true,
+            },
+          },
+        },
+      });
+      if (asgn?.resource) {
+        resource = asgn.resource;
+      }
+    }
 
     if (!resource) {
       return res.status(404).json({
@@ -363,20 +381,72 @@ router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
       });
     }
 
+    let isHistoricalAccess = false;
+    let historicalAssignment: any = null;
 
     // Enforce department boundary access control
     if (userRole === 'DEPARTMENT_MANAGER' || userRole === 'EMPLOYEE') {
       if (resource.departmentId !== userDeptId) {
-        return res.status(403).json({
-          success: false,
-          message: 'Forbidden: Department boundary access denied. You may only view resources within your assigned directorate.',
-        });
+        // Check if the authenticated user has legitimate historical custody on this resource
+        let empRecordId = user.employeeRecordId;
+        if (!empRecordId) {
+          const emp = await prisma.employee.findFirst({
+            where: { OR: [{ userId: user.id }, { email: user.email }] },
+          });
+          empRecordId = emp?.id;
+        }
+
+        if (empRecordId) {
+          historicalAssignment = await prisma.resourceAssignment.findFirst({
+            where: {
+              resourceId: resource.id,
+              employeeId: empRecordId,
+            },
+            include: {
+              department: true,
+              employee: true,
+            },
+            orderBy: { assignedAt: 'desc' },
+          });
+        }
+
+        if (historicalAssignment) {
+          isHistoricalAccess = true;
+        } else {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: Department boundary access denied. You may only view resources within your assigned directorate or those previously in your custody.',
+          });
+        }
       }
+    }
+
+    const formatted = formatResource(resource);
+    if (isHistoricalAccess && historicalAssignment) {
+      formatted.historicalContext = {
+        isHistoricalAccess: true,
+        assignmentNumber: historicalAssignment.assignmentNumber,
+        historicalAssigneeId: historicalAssignment.employeeId,
+        historicalAssigneeName: historicalAssignment.employee?.name,
+        assignmentDepartmentId: historicalAssignment.departmentId,
+        assignmentDepartmentName: historicalAssignment.department?.name,
+        assignedAt: historicalAssignment.assignedAt ? historicalAssignment.assignedAt.toISOString() : undefined,
+        returnedAt: historicalAssignment.returnedAt ? historicalAssignment.returnedAt.toISOString() : undefined,
+        expectedReturnDate: historicalAssignment.expectedReturnDate ? historicalAssignment.expectedReturnDate.toISOString().split('T')[0] : undefined,
+        purpose: historicalAssignment.purpose,
+        conclusionStatus: historicalAssignment.status,
+        conditionOnAssignment: historicalAssignment.conditionOnAssignment,
+        conditionOnReturn: historicalAssignment.returnCondition,
+        returnLocation: historicalAssignment.returnLocation,
+        returnNotes: historicalAssignment.returnNotes,
+        returnReceivedByName: historicalAssignment.returnReceivedByName,
+        isCurrentCustodian: false,
+      };
     }
 
     return res.status(200).json({
       success: true,
-      resource: formatResource(resource),
+      resource: formatted,
     });
   } catch (err) {
     console.error('[GET /api/resources/:id Error]', err);

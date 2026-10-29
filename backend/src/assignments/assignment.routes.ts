@@ -255,16 +255,45 @@ router.get('/my-custody', requireAuth, async (req: AppRequest, res: AppResponse)
 router.get('/history/:resourceId', requireAuth, async (req: AppRequest, res: AppResponse) => {
   try {
     const { resourceId } = req.params;
-    const userRole = req.user!.role;
-    const userDeptId = req.user!.departmentId;
+    const user = req.user!;
+    const userRole = user.role;
+    const userDeptId = user.departmentId;
 
-    const resource = await prisma.resource.findUnique({
+    // 1. Resolve by id, itemCode, or assignmentId
+    let resource = await prisma.resource.findUnique({
       where: { id: resourceId },
       include: {
         department: true,
         currentAssignee: true,
       },
     });
+
+    if (!resource) {
+      resource = await prisma.resource.findUnique({
+        where: { itemCode: resourceId },
+        include: {
+          department: true,
+          currentAssignee: true,
+        },
+      });
+    }
+
+    if (!resource) {
+      const asgn = await prisma.resourceAssignment.findUnique({
+        where: { id: resourceId },
+        include: {
+          resource: {
+            include: {
+              department: true,
+              currentAssignee: true,
+            },
+          },
+        },
+      });
+      if (asgn?.resource) {
+        resource = asgn.resource;
+      }
+    }
 
     if (!resource) {
       return res.status(404).json({
@@ -276,16 +305,35 @@ router.get('/history/:resourceId', requireAuth, async (req: AppRequest, res: App
     // Role-based visibility check
     if (userRole === 'DEPARTMENT_MANAGER' || userRole === 'EMPLOYEE') {
       if (resource.departmentId !== userDeptId) {
-        return res.status(403).json({
-          success: false,
-          message: 'Forbidden: You do not have permission to view custody records for resources outside your directorate',
-        });
+        let empRecordId = user.employeeRecordId;
+        if (!empRecordId) {
+          const emp = await prisma.employee.findFirst({
+            where: { OR: [{ userId: user.id }, { email: user.email }] },
+          });
+          empRecordId = emp?.id;
+        }
+
+        const hasHistoricalAsgn = empRecordId
+          ? await prisma.resourceAssignment.findFirst({
+              where: {
+                resourceId: resource.id,
+                employeeId: empRecordId,
+              },
+            })
+          : null;
+
+        if (!hasHistoricalAsgn) {
+          return res.status(403).json({
+            success: false,
+            message: 'Forbidden: You do not have permission to view custody records for resources outside your directorate',
+          });
+        }
       }
     }
 
     const [assignments, transfers] = await Promise.all([
       prisma.resourceAssignment.findMany({
-        where: { resourceId },
+        where: { resourceId: resource.id },
         include: {
           resource: true,
           employee: true,
@@ -294,7 +342,7 @@ router.get('/history/:resourceId', requireAuth, async (req: AppRequest, res: App
         orderBy: { assignedAt: 'desc' },
       }),
       prisma.custodyTransfer.findMany({
-        where: { resourceId },
+        where: { resourceId: resource.id },
         include: {
           resource: true,
           fromEmployee: true,
