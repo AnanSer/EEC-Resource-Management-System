@@ -22,7 +22,8 @@ import {
   Check,
   Trash2,
   ShieldAlert,
-  Clock
+  Clock,
+  Wrench
 } from 'lucide-react';
 
 export const ResourceDetailPage: React.FC = () => {
@@ -332,6 +333,24 @@ export const ResourceDetailPage: React.FC = () => {
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete Resource
+                  </button>
+                )}
+
+                {/* Report Fault Action */}
+                {resource.status !== 'MAINTENANCE' && (
+                  (currentRole === 'ADMIN' ||
+                   currentRole === 'IT_TECHNICIAN' ||
+                   currentRole === 'STORE_KEEPER' ||
+                   (currentRole === 'DEPARTMENT_MANAGER' && resource.currentDepartmentId === currentUser?.departmentId) ||
+                   (currentRole === 'EMPLOYEE' && (resource.currentDepartmentId === currentUser?.departmentId || resource.currentAssigneeId === currentUser?.id)))
+                ) && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/maintenance', { state: { openReportModal: true, resourceId: resource.id } })}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 text-xs font-bold rounded-xl transition-colors shadow-sm"
+                  >
+                    <Wrench className="w-3.5 h-3.5 text-amber-700" />
+                    Report Fault
                   </button>
                 )}
               </>

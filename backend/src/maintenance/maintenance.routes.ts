@@ -388,14 +388,13 @@ router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
     if (userRole === 'EMPLOYEE') {
       const emp = await resolveEmployeeRecord(user);
       const isReporter = requestRecord.reportedById === user.id;
-      const wasCustodian = emp && requestRecord.custodianIdAtRequest === emp.id;
-      const isCurrentCustodian = emp && requestRecord.resource.currentAssigneeId === emp.id;
-      const isOwnDept = requestRecord.departmentId === userDeptId;
+      const wasCustodian = Boolean(emp && requestRecord.custodianIdAtRequest === emp.id);
+      const isCurrentCustodian = Boolean(emp && requestRecord.resource.currentAssigneeId === emp.id);
 
-      if (!isReporter && !wasCustodian && !isCurrentCustodian && !isOwnDept) {
+      if (!isReporter && !wasCustodian && !isCurrentCustodian) {
         return res.status(403).json({
           success: false,
-          message: 'Forbidden: Department boundary access denied. You may only view maintenance records for your department or equipment in your custody.',
+          message: 'Forbidden: You may only view maintenance requests you personally reported or equipment currently in your custody.',
         });
       }
     } else if (userRole === 'DEPARTMENT_MANAGER') {

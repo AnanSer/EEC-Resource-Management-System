@@ -8,7 +8,6 @@ import { CategoryBadge } from '../../components/ui/CategoryBadge';
 import { Modal } from '../../components/ui/Modal';
 import { 
   Wrench, 
-  Plus, 
   AlertCircle, 
   Check, 
   AlertTriangle,
@@ -22,9 +21,10 @@ import {
   Layers,
   Building2
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 export const MaintenancePage: React.FC = () => {
+  const location = useLocation();
   const { currentRole } = useAuth();
   const [tickets, setTickets] = useState<MaintenanceTicket[]>([]);
   const [metrics, setMetrics] = useState<MaintenanceMetrics | null>(null);
@@ -87,20 +87,31 @@ export const MaintenancePage: React.FC = () => {
     setLoading(true);
     setActionError(null);
     try {
-      const [tList, rList, mMetrics] = await Promise.all([
+      const [tList, rList, myAssets, mMetrics] = await Promise.all([
         maintenanceService.getTickets({
           status: statusFilter,
           priority: priorityFilter,
           search: searchQuery,
         }),
         resourceService.getAll(),
+        currentRole === 'EMPLOYEE' ? resourceService.getMyAssets().catch(() => []) : Promise.resolve([]),
         maintenanceService.getMetrics(),
       ]);
       setTickets(tList);
-      setResources(rList);
+
+      const combinedMap = new Map<string, Resource>();
+      rList.forEach((r) => combinedMap.set(r.id, r));
+      myAssets.forEach((r) => combinedMap.set(r.id, r));
+      const authorizedResources = Array.from(combinedMap.values());
+      setResources(authorizedResources);
       setMetrics(mMetrics);
-      if (rList.length > 0 && !selectedResourceId) {
-        setSelectedResourceId(rList[0].id);
+
+      // Pre-select resource if navigated from Resource Detail "Report Fault" action
+      if (location.state?.openReportModal && location.state?.resourceId) {
+        setSelectedResourceId(location.state.resourceId);
+        setIsCreateModalOpen(true);
+      } else if (authorizedResources.length > 0 && !selectedResourceId) {
+        setSelectedResourceId(authorizedResources[0].id);
       }
     } catch (err: any) {
       console.error('Failed to load maintenance data', err);
@@ -267,8 +278,8 @@ export const MaintenancePage: React.FC = () => {
           }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl font-bold text-xs transition-colors shadow-sm"
         >
-          <Plus className="w-4 h-4" />
-          Report Faulty Equipment
+          <Wrench className="w-4 h-4" />
+          Report Fault
         </button>
       </PageHeader>
 
@@ -383,6 +394,29 @@ export const MaintenancePage: React.FC = () => {
               ? 'No tickets match the selected filter criteria.'
               : 'No equipment defect reports or maintenance work orders are currently logged.'}
           </p>
+          {searchQuery || statusFilter !== 'ALL' || priorityFilter !== 'ALL' ? (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setStatusFilter('ALL');
+                setPriorityFilter('ALL');
+              }}
+              className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+            >
+              Reset Filters
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setActionError(null);
+                setIsCreateModalOpen(true);
+              }}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl text-xs font-bold transition-colors shadow-sm"
+            >
+              <Wrench className="w-4 h-4" />
+              Report Fault
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

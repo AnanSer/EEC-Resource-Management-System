@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import prisma from '../src/lib/prisma.js';
+import { hashPassword } from '../src/auth/password.js';
 
 process.env.RMS_TEST_MODE = '1';
 
@@ -509,6 +510,149 @@ async function runTests() {
     assert(ticketWithHistory.status === 200, 'Can retrieve maintenance ticket details with logs');
     assert(Array.isArray(ticketWithHistory.body?.request?.logs), 'Ticket has audit log trail');
     assert(ticketWithHistory.body?.request?.logs?.length >= 3, 'Audit trail contains SUBMITTED, APPROVED, IN_PROGRESS, ON_HOLD, COMPLETED entries');
+
+    // 9. Strict Reporter-Scoped Access, Department Boundaries & Immutability
+    console.log('\n--- 9. Strict Reporter-Scoped Access, Department Boundaries & Immutability ---');
+
+    // Create a second employee in dept-101 (same department as Haile)
+    const testPassword = 'EEC-Secure2026!';
+    const testHash = await hashPassword(testPassword);
+
+    const emp2User = await prisma.user.upsert({
+      where: { email: 'emp2.dept101@eec.gov.et' },
+      update: { status: 'APPROVED', departmentId: 'dept-101', role: 'EMPLOYEE' },
+      create: {
+        email: 'emp2.dept101@eec.gov.et',
+        fullName: 'Solomon Test Employee',
+        passwordHash: testHash,
+        role: 'EMPLOYEE',
+        status: 'APPROVED',
+        departmentId: 'dept-101',
+      },
+    });
+
+    const emp2Record = await prisma.employee.upsert({
+      where: { employeeId: 'EEC-EMP-TEST-101' },
+      update: { userId: emp2User.id, departmentId: 'dept-101', role: 'EMPLOYEE' },
+      create: {
+        employeeId: 'EEC-EMP-TEST-101',
+        name: 'Solomon Test Employee',
+        email: 'emp2.dept101@eec.gov.et',
+        phone: '+251 911 000101',
+        departmentId: 'dept-101',
+        designation: 'Junior Highway Engineer',
+        role: 'EMPLOYEE',
+        userId: emp2User.id,
+      },
+    });
+
+    // Create a manager in dept-102 (different department)
+    const mgr2User = await prisma.user.upsert({
+      where: { email: 'mgr.dept102@eec.gov.et' },
+      update: { status: 'APPROVED', departmentId: 'dept-102', role: 'DEPARTMENT_MANAGER' },
+      create: {
+        email: 'mgr.dept102@eec.gov.et',
+        fullName: 'Water Directorate Manager',
+        passwordHash: testHash,
+        role: 'DEPARTMENT_MANAGER',
+        status: 'APPROVED',
+        departmentId: 'dept-102',
+      },
+    });
+
+    await prisma.employee.upsert({
+      where: { employeeId: 'EEC-EMP-TEST-102' },
+      update: { userId: mgr2User.id, departmentId: 'dept-102', role: 'DEPARTMENT_MANAGER' },
+      create: {
+        employeeId: 'EEC-EMP-TEST-102',
+        name: 'Water Directorate Manager',
+        email: 'mgr.dept102@eec.gov.et',
+        phone: '+251 911 000102',
+        departmentId: 'dept-102',
+        designation: 'Director, Water Directorate',
+        role: 'DEPARTMENT_MANAGER',
+        userId: mgr2User.id,
+      },
+    });
+
+    const emp2Cookie = await loginUser('emp2.dept101@eec.gov.et');
+    assert(!!emp2Cookie, 'Second employee in dept-101 logged in');
+
+    const mgr2Cookie = await loginUser('mgr.dept102@eec.gov.et');
+    assert(!!mgr2Cookie, 'Manager in dept-102 logged in');
+
+    // A. Employee B cannot access defect report created by Employee A in the SAME department
+    const emp2ViewOtherTicket = await request('GET', `/api/maintenance/${createdTicket1.id}`, { cookie: emp2Cookie });
+    assert(emp2ViewOtherTicket.status === 403, 'Employee B blocked with 403 when viewing ticket reported by Employee A in same department');
+
+    // B. Employee B cannot see Employee A's ticket in list
+    const emp2ListRes = await request('GET', '/api/maintenance', { cookie: emp2Cookie });
+    assert(emp2ListRes.status === 200, 'Employee B can fetch their own maintenance list');
+    const emp2Tickets: any[] = emp2ListRes.body?.requests || [];
+    const seesOtherTicket = emp2Tickets.some((t) => t.id === createdTicket1.id);
+    assert(!seesOtherTicket, 'Employee B list does NOT leak tickets reported by other employees in same department');
+
+    // C. Department Manager in dept-102 cannot view or review dept-101's ticket
+    const mgr2ViewTicket1 = await request('GET', `/api/maintenance/${createdTicket1.id}`, { cookie: mgr2Cookie });
+    assert(mgr2ViewTicket1.status === 403, 'Department Manager in dept-102 blocked with 403 from viewing dept-101 maintenance request');
+
+    const mgr2ReviewTicket1 = await request('POST', `/api/maintenance/${createdTicket1.id}/review`, {
+      cookie: mgr2Cookie,
+      body: { action: 'APPROVE', comments: 'Unauthorized cross-department approval' },
+    });
+    assert(mgr2ReviewTicket1.status === 403, 'Department Manager in dept-102 blocked with 403 from reviewing dept-101 ticket');
+
+    // D. Custodian exception: Employee CAN view ticket for equipment in their active custody even if reported by another user
+    const assetForCustodyTest = await prisma.resource.findFirst({
+      where: {
+        departmentId: 'dept-101',
+        status: 'AVAILABLE',
+      },
+    });
+
+    if (assetForCustodyTest) {
+      // Assign to emp2Record
+      const assignRes = await request('POST', '/api/assignments', {
+        cookie: storeKeeperCookie,
+        body: {
+          resourceId: assetForCustodyTest.id,
+          employeeId: emp2Record.id,
+          purpose: 'Testing custody maintenance ticket access',
+        },
+      });
+      assert(assignRes.status === 201, 'Assigned asset to Employee B for custody test');
+
+      // Admin reports defect on this asset
+      const adminReportOnCustodyAsset = await request('POST', '/api/maintenance', {
+        cookie: adminCookie,
+        body: {
+          resourceId: assetForCustodyTest.id,
+          title: 'Emergency workshop maintenance on deployed asset',
+          description: 'Defect noticed during site inspection by project director.',
+          priority: 'MEDIUM',
+        },
+      });
+      assert(adminReportOnCustodyAsset.status === 201, 'Admin opened maintenance ticket for asset in Employee B custody');
+      const custodyTicketId = adminReportOnCustodyAsset.body?.request?.id;
+
+      // Employee B (custodian, but NOT the reporter) views the ticket
+      const emp2ViewCustodyTicket = await request('GET', `/api/maintenance/${custodyTicketId}`, { cookie: emp2Cookie });
+      assert(emp2ViewCustodyTicket.status === 200, 'Employee B CAN view maintenance ticket for asset in their active custody (even reported by Admin)');
+
+      // Clean up / reject ticket so asset is restored
+      await request('POST', `/api/maintenance/${custodyTicketId}/review`, {
+        cookie: adminCookie,
+        body: { action: 'REJECT', rejectionReason: 'Test completed' },
+      });
+    }
+
+    // E. Reporter identity immutability check
+    const finalTicket1State = await prisma.maintenanceRequest.findUnique({
+      where: { id: createdTicket1.id },
+    });
+    assert(finalTicket1State?.reportedById === createdTicket1.reportedById, 'Ticket reportedById remains immutable');
+    assert(finalTicket1State?.reportedByName === createdTicket1.reportedByName, 'Ticket reportedByName remains immutable');
+    assert(finalTicket1State?.reportedByRole === createdTicket1.reportedByRole, 'Ticket reportedByRole remains immutable');
 
     console.log(`\nTests Completed: ${passed} passed, ${failed} failed.`);
     if (failed > 0) {

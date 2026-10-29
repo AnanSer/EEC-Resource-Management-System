@@ -41,7 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Assignments', path: '/assignments', icon: ArrowLeftRight, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'DEPARTMENT_MANAGER'] },
   { name: 'Requisitions', path: '/requisitions', icon: ClipboardList, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
   { name: 'Returns & Custody', path: '/returns', icon: RotateCcw, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'DEPARTMENT_MANAGER'] },
-  { name: 'Maintenance', path: '/maintenance', icon: Wrench, allowedRoles: ['ADMIN', 'IT_TECHNICIAN', 'STORE_KEEPER'] },
+  { name: 'Maintenance', path: '/maintenance', icon: Wrench, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
   { name: 'Inspections & Tests', path: '/inspections', icon: ShieldCheck, allowedRoles: ['ADMIN', 'IT_TECHNICIAN', 'STORE_KEEPER'] },
   { name: 'Departments', path: '/departments', icon: Building2, allowedRoles: ['ADMIN', 'DEPARTMENT_MANAGER'] },
   { name: 'Employees', path: '/employees', icon: Users, allowedRoles: ['ADMIN', 'DEPARTMENT_MANAGER'] },
