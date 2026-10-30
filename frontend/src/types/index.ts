@@ -385,15 +385,23 @@ export interface InspectionTest {
   createdAt: string;
 }
 
-export interface NotificationItem {
+export interface AppNotification {
   id: string;
+  recipientId?: string;
   title: string;
   message: string;
-  type: 'INFO' | 'WARNING' | 'ALERT' | 'SUCCESS';
+  type: string;
+  priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL' | string;
   isRead: boolean;
-  createdAt: string;
+  readAt?: string | null;
+  actionUrl?: string | null;
   link?: string;
+  relatedEntityType?: string | null;
+  relatedEntityId?: string | null;
+  createdAt: string;
 }
+
+export type NotificationItem = AppNotification;
 
 export interface DashboardMetrics {
   scope?: 'CORPORATION' | 'DEPARTMENT';

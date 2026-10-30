@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { EECLogo } from '../brand/EECLogo';
 import { 
   LayoutDashboard, 
@@ -47,15 +48,26 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Employees', path: '/employees', icon: Users, allowedRoles: ['ADMIN', 'DEPARTMENT_MANAGER'] },
   { name: 'User Approvals', path: '/approvals', icon: CheckSquare, allowedRoles: ['ADMIN'] },
   { name: 'Reports & Audits', path: '/reports', icon: FileBarChart, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
-  { name: 'Notifications', path: '/notifications', icon: Bell, badge: '3', allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
+  { name: 'Notifications', path: '/notifications', icon: Bell, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
   { name: 'Settings', path: '/settings', icon: Settings, allowedRoles: ['ADMIN'] },
   { name: 'My Profile', path: '/profile', icon: UserCheck, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
   const { currentRole } = useAuth();
+  const { unreadCount } = useNotifications();
 
-  const filteredItems = NAV_ITEMS.filter(item => item.allowedRoles.includes(currentRole));
+  const filteredItems = NAV_ITEMS
+    .filter(item => item.allowedRoles.includes(currentRole))
+    .map(item => {
+      if (item.path === '/notifications') {
+        return {
+          ...item,
+          badge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : String(unreadCount)) : undefined,
+        };
+      }
+      return item;
+    });
 
   return (
     <aside

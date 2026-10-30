@@ -3,6 +3,12 @@ import { AppRequest, AppResponse } from '../http/types';
 import { requireAuth } from '../auth/auth.middleware';
 import prisma from '../lib/prisma';
 import { VALID_CONDITIONS } from '../resources/resource.routes';
+import {
+  safeNotifyUser,
+  safeNotifyUsers,
+  findActiveUserIdsByRole,
+  resolveEmployeeUserId,
+} from '../notifications/notification.service';
 
 const router = new Router();
 
@@ -713,6 +719,21 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       return { newAssignment, updatedResource };
     });
 
+    // Notify receiving employee
+    const recipientUserId = await resolveEmployeeUserId(employee.id);
+    if (recipientUserId) {
+      await safeNotifyUser({
+        recipientId: recipientUserId,
+        title: `Asset Assigned: ${resource.name}`,
+        message: `You have been assigned '${resource.name}' (${resource.itemCode}) for: ${purpose.trim()}.`,
+        type: 'ASSIGNMENT',
+        priority: 'NORMAL',
+        actionUrl: '/resources',
+        relatedEntityType: 'RESOURCE',
+        relatedEntityId: resource.id,
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: `Resource '${resource.itemCode}' successfully assigned to ${employee.name}`,
@@ -978,6 +999,36 @@ router.post('/transfer', requireAuth, async (req: AppRequest, res: AppResponse) 
       return { newAssignment, transferRecord, updatedResource };
     });
 
+    // Notify new custodian
+    const newCustodianUserId = await resolveEmployeeUserId(toEmployee.id);
+    if (newCustodianUserId) {
+      await safeNotifyUser({
+        recipientId: newCustodianUserId,
+        title: `Custody Transferred: ${resource.name}`,
+        message: `Custody of '${resource.name}' (${resource.itemCode}) has been transferred to you from ${currentAssignment.employee.name}.`,
+        type: 'ASSIGNMENT',
+        priority: 'NORMAL',
+        actionUrl: '/resources',
+        relatedEntityType: 'RESOURCE',
+        relatedEntityId: resource.id,
+      });
+    }
+
+    // Notify previous custodian
+    const prevCustodianUserId = await resolveEmployeeUserId(currentAssignment.employeeId);
+    if (prevCustodianUserId && prevCustodianUserId !== newCustodianUserId) {
+      await safeNotifyUser({
+        recipientId: prevCustodianUserId,
+        title: `Custody Transferred: ${resource.name}`,
+        message: `Custody of '${resource.name}' (${resource.itemCode}) was transferred to ${toEmployee.name}.`,
+        type: 'ASSIGNMENT',
+        priority: 'NORMAL',
+        actionUrl: '/resources',
+        relatedEntityType: 'RESOURCE',
+        relatedEntityId: resource.id,
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: `Custody of '${resource.itemCode}' transferred from ${currentAssignment.employee.name} to ${toEmployee.name}`,
@@ -1233,6 +1284,33 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
 
       return { closedAssignment, updatedResource };
     });
+
+    // Notify Store Keepers
+    const storeKeepers = await findActiveUserIdsByRole(['STORE_KEEPER']);
+    await safeNotifyUsers(storeKeepers, {
+      title: `Resource Returned: ${targetResource.name}`,
+      message: `'${targetResource.name}' (${targetResource.itemCode}) was returned by ${currentAssignment.employee?.name || 'custodian'} in condition: ${finalCondition}. Location: ${finalLocation}.`,
+      type: 'ASSIGNMENT',
+      priority: ['DAMAGED', 'NEEDS_REPAIR'].includes(finalCondition) ? 'HIGH' : 'NORMAL',
+      actionUrl: '/resources',
+      relatedEntityType: 'RESOURCE',
+      relatedEntityId: targetResource.id,
+    });
+
+    // Notify custodian acknowledging receipt
+    const custodianUserId = await resolveEmployeeUserId(currentAssignment.employeeId);
+    if (custodianUserId && custodianUserId !== user.id) {
+      await safeNotifyUser({
+        recipientId: custodianUserId,
+        title: `Resource Return Confirmed: ${targetResource.name}`,
+        message: `Return of '${targetResource.name}' (${targetResource.itemCode}) has been received and confirmed in store.`,
+        type: 'ASSIGNMENT',
+        priority: 'NORMAL',
+        actionUrl: '/resources',
+        relatedEntityType: 'RESOURCE',
+        relatedEntityId: targetResource.id,
+      });
+    }
 
     return res.status(200).json({
       success: true,

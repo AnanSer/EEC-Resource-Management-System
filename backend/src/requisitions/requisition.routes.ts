@@ -3,6 +3,12 @@ import { AppRequest, AppResponse } from '../http/types';
 import { requireAuth, requireRole } from '../auth/auth.middleware';
 import prisma from '../lib/prisma';
 import { VALID_CATEGORIES } from '../resources/resource.routes';
+import {
+  safeNotifyUser,
+  safeNotifyUsers,
+  findActiveUserIdsByRole,
+  resolveEmployeeUserId,
+} from '../notifications/notification.service';
 
 const router = new Router();
 
@@ -386,6 +392,46 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       },
     });
 
+    // Notify relevant roles upon successful creation
+    if (isDirect) {
+      const storeKeepers = await findActiveUserIdsByRole(['STORE_KEEPER']);
+      await safeNotifyUsers(storeKeepers, {
+        title: `Direct Allocation Ready: ${createdReq.requisitionNumber}`,
+        message: `Direct allocation of ${category} (${itemDescription.trim()}) for ${targetEmp.name} is approved and ready for warehouse fulfillment.`,
+        type: 'REQUISITION',
+        priority: 'HIGH',
+        actionUrl: '/requisitions',
+        relatedEntityType: 'REQUISITION',
+        relatedEntityId: createdReq.id,
+      });
+
+      const empUserId = await resolveEmployeeUserId(targetEmp.id);
+      if (empUserId && empUserId !== user.id) {
+        await safeNotifyUser({
+          recipientId: empUserId,
+          title: `Direct Allocation Initiated: ${createdReq.requisitionNumber}`,
+          message: `Corporate Administration initiated an asset allocation for ${itemDescription.trim()}.`,
+          type: 'REQUISITION',
+          priority: 'NORMAL',
+          actionUrl: '/requisitions',
+          relatedEntityType: 'REQUISITION',
+          relatedEntityId: createdReq.id,
+        });
+      }
+    } else {
+      const adminAndStoreKeepers = await findActiveUserIdsByRole(['ADMIN', 'STORE_KEEPER']);
+      const recipients = adminAndStoreKeepers.filter((id) => id !== user.id);
+      await safeNotifyUsers(recipients, {
+        title: `New Requisition: ${createdReq.requisitionNumber}`,
+        message: `${user.fullName || user.email} submitted a request for ${category}: ${itemDescription.trim()} (${urgency || 'ROUTINE'}).`,
+        type: 'REQUISITION',
+        priority: urgency === 'CRITICAL' ? 'CRITICAL' : urgency === 'URGENT' ? 'HIGH' : 'NORMAL',
+        actionUrl: '/requisitions',
+        relatedEntityType: 'REQUISITION',
+        relatedEntityId: createdReq.id,
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: isDirect
@@ -446,6 +492,33 @@ router.post('/:id/approve', requireAuth, requireRole(['ADMIN']), async (req: App
       },
     });
 
+    // Notify requesting employee
+    const requesterUserId = reqItem.requesterId || (await resolveEmployeeUserId(reqItem.employeeId));
+    if (requesterUserId) {
+      await safeNotifyUser({
+        recipientId: requesterUserId,
+        title: `Requisition Approved: ${reqItem.requisitionNumber}`,
+        message: `Your requisition for ${reqItem.itemDescription} was approved by ${user.fullName || 'Administrator'}. Ready for warehouse fulfillment.`,
+        type: 'REQUISITION',
+        priority: 'HIGH',
+        actionUrl: '/requisitions',
+        relatedEntityType: 'REQUISITION',
+        relatedEntityId: reqItem.id,
+      });
+    }
+
+    // Also notify Store Keepers
+    const storeKeepers = await findActiveUserIdsByRole(['STORE_KEEPER']);
+    await safeNotifyUsers(storeKeepers, {
+      title: `Requisition Ready to Fulfill: ${reqItem.requisitionNumber}`,
+      message: `Requisition ${reqItem.requisitionNumber} (${reqItem.category} - ${reqItem.itemDescription}) has been approved and is ready for fulfillment.`,
+      type: 'REQUISITION',
+      priority: 'NORMAL',
+      actionUrl: '/requisitions',
+      relatedEntityType: 'REQUISITION',
+      relatedEntityId: reqItem.id,
+    });
+
     return res.status(200).json({
       success: true,
       message: `Requisition '${reqItem.requisitionNumber}' approved. Ready for Store Keeper fulfillment.`,
@@ -504,6 +577,21 @@ router.post('/:id/reject', requireAuth, requireRole(['ADMIN']), async (req: AppR
         employee: true,
       },
     });
+
+    // Notify requesting employee
+    const requesterUserId = reqItem.requesterId || (await resolveEmployeeUserId(reqItem.employeeId));
+    if (requesterUserId) {
+      await safeNotifyUser({
+        recipientId: requesterUserId,
+        title: `Requisition Rejected: ${reqItem.requisitionNumber}`,
+        message: `Your requisition for ${reqItem.itemDescription} was rejected: ${reason.trim()}`,
+        type: 'REQUISITION',
+        priority: 'HIGH',
+        actionUrl: '/requisitions',
+        relatedEntityType: 'REQUISITION',
+        relatedEntityId: reqItem.id,
+      });
+    }
 
     return res.status(200).json({
       success: true,
@@ -707,6 +795,21 @@ router.post('/:id/fulfill', requireAuth, requireRole(['STORE_KEEPER']), async (r
 
       return { newAssignment, updatedResource, updatedRequisition };
     });
+
+    // Notify requesting employee
+    const recipientUserId = reqItem.requesterId || (await resolveEmployeeUserId(reqItem.employeeId));
+    if (recipientUserId) {
+      await safeNotifyUser({
+        recipientId: recipientUserId,
+        title: `Requisition Fulfilled: ${reqItem.requisitionNumber}`,
+        message: `Physical asset '${resource.name}' (${resource.itemCode}) has been allocated and handed over for your requisition.`,
+        type: 'REQUISITION',
+        priority: 'HIGH',
+        actionUrl: '/resources',
+        relatedEntityType: 'RESOURCE',
+        relatedEntityId: resource.id,
+      });
+    }
 
     return res.status(200).json({
       success: true,

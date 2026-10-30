@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword } from './password';
 import { createSession, destroySession, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from './session';
 import { requireRole } from './auth.middleware';
 import prisma from '../lib/prisma';
+import { safeNotifyUser, safeNotifyUsers, findActiveUserIdsByRole } from '../notifications/notification.service';
 
 const router = new Router();
 
@@ -80,6 +81,17 @@ router.post('/register', async (req: AppRequest, res: AppResponse) => {
         departmentId: true,
         createdAt: true,
       },
+    });
+
+    const adminUserIds = await findActiveUserIdsByRole(['ADMIN']);
+    await safeNotifyUsers(adminUserIds, {
+      title: `New User Registration: ${newUser.fullName}`,
+      message: `User ${newUser.fullName} (${newUser.email}) registered an account awaiting administrator approval.`,
+      type: 'USER',
+      priority: 'NORMAL',
+      actionUrl: '/profile',
+      relatedEntityType: 'USER',
+      relatedEntityId: newUser.id,
     });
 
     return res.status(201).json({
@@ -421,6 +433,17 @@ router.post('/users/:id/approve', requireRole(['ADMIN']), async (req: AppRequest
       },
     });
 
+    await safeNotifyUser({
+      recipientId: updatedUser.id,
+      title: 'Account Approved',
+      message: `Your EEC RMS account has been approved with role ${updatedUser.role}. You can now sign in and access the system.`,
+      type: 'USER',
+      priority: 'HIGH',
+      actionUrl: '/profile',
+      relatedEntityType: 'USER',
+      relatedEntityId: updatedUser.id,
+    });
+
     return res.status(200).json({
       success: true,
       message: `User ${updatedUser.fullName} approved with role ${updatedUser.role}`,
@@ -483,6 +506,17 @@ router.post('/users/:id/reject', requireRole(['ADMIN']), async (req: AppRequest,
       where: { userId },
     }).catch(() => {});
 
+    await safeNotifyUser({
+      recipientId: updatedUser.id,
+      title: 'Account Registration Rejected',
+      message: `Your account registration was rejected${reason ? ': ' + reason : '.'}`,
+      type: 'USER',
+      priority: 'HIGH',
+      actionUrl: '/profile',
+      relatedEntityType: 'USER',
+      relatedEntityId: updatedUser.id,
+    });
+
     return res.status(200).json({
       success: true,
       message: `Registration for ${updatedUser.fullName} was rejected`,
@@ -494,6 +528,78 @@ router.post('/users/:id/reject', requireRole(['ADMIN']), async (req: AppRequest,
     return res.status(500).json({
       success: false,
       message: 'Failed to reject user registration',
+    });
+  }
+});
+
+/**
+ * POST /api/auth/users/:id/suspend
+ * ADMIN-only endpoint to suspend an active user account
+ */
+router.post('/users/:id/suspend', requireRole(['ADMIN']), async (req: AppRequest, res: AppResponse) => {
+  try {
+    const userId = req.params.id;
+    const { reason } = req.body || {};
+
+    const targetUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account not found',
+      });
+    }
+
+    if (targetUser.id === req.user?.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot suspend your own administrator account',
+      });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: 'SUSPENDED',
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        status: true,
+        updatedAt: true,
+      },
+    });
+
+    await prisma.session.deleteMany({
+      where: { userId },
+    }).catch(() => {});
+
+    await safeNotifyUser({
+      recipientId: updatedUser.id,
+      title: 'Account Suspended',
+      message: `Your account has been suspended${reason ? ': ' + reason : '. Please contact EEC Security Administration.'}`,
+      type: 'USER',
+      priority: 'CRITICAL',
+      actionUrl: '/profile',
+      relatedEntityType: 'USER',
+      relatedEntityId: updatedUser.id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `User ${updatedUser.fullName} was suspended`,
+      user: updatedUser,
+      reason: reason || 'Not specified',
+    });
+  } catch (err: any) {
+    console.error('[EEC-RMS Auth] Suspend user error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to suspend user account',
     });
   }
 });

@@ -362,3 +362,93 @@ export async function deleteNotification(
   return { success: true };
 }
 
+/**
+ * Resolves the active User ID corresponding to an Employee ID.
+ */
+export async function resolveEmployeeUserId(
+  employeeId: string,
+  client: any = prisma
+): Promise<string | null> {
+  if (!employeeId) return null;
+  const emp = await client.employee.findUnique({
+    where: { id: employeeId },
+    select: { userId: true, email: true },
+  });
+  if (!emp) return null;
+
+  if (emp.userId) {
+    const user = await client.user.findUnique({
+      where: { id: emp.userId },
+      select: { id: true, status: true },
+    });
+    if (user && ['ACTIVE', 'APPROVED'].includes(user.status)) return user.id;
+  }
+
+  if (emp.email) {
+    const userByEmail = await client.user.findUnique({
+      where: { email: emp.email },
+      select: { id: true, status: true },
+    });
+    if (userByEmail && ['ACTIVE', 'APPROVED'].includes(userByEmail.status)) return userByEmail.id;
+  }
+
+  return null;
+}
+
+/**
+ * Finds all active User IDs matching specified roles and an optional department.
+ */
+export async function findActiveUserIdsByRole(
+  roles: string[],
+  departmentId?: string | null,
+  client: any = prisma
+): Promise<string[]> {
+  const where: any = {
+    role: { in: roles },
+    status: { in: ['ACTIVE', 'APPROVED'] },
+  };
+
+  if (departmentId) {
+    where.departmentId = departmentId;
+  }
+
+  const users = await client.user.findMany({
+    where,
+    select: { id: true },
+  });
+
+  return users.map((u: any) => u.id);
+}
+
+/**
+ * Safe notification dispatcher for a single user (never throws or crashes business operations).
+ */
+export async function safeNotifyUser(
+  input: CreateNotificationInput,
+  client: any = prisma
+) {
+  try {
+    return await createNotification(input, client);
+  } catch (err) {
+    console.error('[Notification Dispatch Warning] Failed to dispatch notification to user:', err);
+    return null;
+  }
+}
+
+/**
+ * Safe notification dispatcher for multiple users (never throws or crashes business operations).
+ */
+export async function safeNotifyUsers(
+  recipientIds: string[],
+  params: Omit<CreateNotificationInput, 'recipientId'>,
+  client: any = prisma
+) {
+  try {
+    return await createNotifications(recipientIds, params, client);
+  } catch (err) {
+    console.error('[Notification Dispatch Warning] Failed to dispatch batch notifications:', err);
+    return [];
+  }
+}
+
+

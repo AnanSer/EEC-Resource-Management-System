@@ -3,6 +3,12 @@ import { AppRequest, AppResponse } from '../http/types';
 import { requireAuth } from '../auth/auth.middleware';
 import prisma from '../lib/prisma';
 import { recordAuditEvent } from '../audit/audit.service';
+import {
+  safeNotifyUser,
+  safeNotifyUsers,
+  findActiveUserIdsByRole,
+  resolveEmployeeUserId,
+} from '../notifications/notification.service';
 
 const router = new Router();
 
@@ -638,6 +644,24 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       return { newRequest, updatedResource };
     });
 
+    // Notify responsible IT Technicians, Admin, and Department Manager
+    const techUserIds = await findActiveUserIdsByRole(['IT_TECHNICIAN']);
+    const adminUserIds = await findActiveUserIdsByRole(['ADMIN']);
+    const managerUserIds = await findActiveUserIdsByRole(['DEPARTMENT_MANAGER'], resource.departmentId);
+    const maintenanceRecipients = Array.from(
+      new Set([...techUserIds, ...adminUserIds, ...managerUserIds].filter((id) => id !== user.id))
+    );
+
+    await safeNotifyUsers(maintenanceRecipients, {
+      title: `Maintenance Fault Reported: ${result.newRequest.requestNumber}`,
+      message: `'${resource.name}' (${resource.itemCode}) reported with defect: ${title.trim()} (Priority: ${cleanPriority})`,
+      type: 'MAINTENANCE',
+      priority: cleanPriority === 'CRITICAL' ? 'CRITICAL' : cleanPriority === 'HIGH' ? 'HIGH' : 'NORMAL',
+      actionUrl: '/maintenance',
+      relatedEntityType: 'MAINTENANCE_REQUEST',
+      relatedEntityId: result.newRequest.id,
+    });
+
     return res.status(201).json({
       success: true,
       message: `Maintenance request ${result.newRequest.requestNumber} submitted successfully`,
@@ -835,6 +859,46 @@ router.post('/:id/review', requireAuth, async (req: AppRequest, res: AppResponse
         return { updatedRequest, resourceStatus: safeRestoreStatus };
       }
     });
+
+    // Notify the employee who reported the fault
+    if (requestRecord.reportedById) {
+      if (action === 'APPROVE') {
+        await safeNotifyUser({
+          recipientId: requestRecord.reportedById,
+          title: `Maintenance Approved: ${requestRecord.requestNumber}`,
+          message: `Your maintenance request for '${requestRecord.resource.name}' has been approved.${comments ? ' Comments: ' + comments.trim() : ''}`,
+          type: 'MAINTENANCE',
+          priority: 'NORMAL',
+          actionUrl: '/maintenance',
+          relatedEntityType: 'MAINTENANCE_REQUEST',
+          relatedEntityId: requestRecord.id,
+        });
+
+        if (assignedTechnicianId && assignedTechnicianId !== user.id) {
+          await safeNotifyUser({
+            recipientId: assignedTechnicianId,
+            title: `Maintenance Work Order Assigned: ${requestRecord.requestNumber}`,
+            message: `You have been assigned to service '${requestRecord.resource.name}' (${requestRecord.resource.itemCode}).`,
+            type: 'MAINTENANCE',
+            priority: 'HIGH',
+            actionUrl: '/maintenance',
+            relatedEntityType: 'MAINTENANCE_REQUEST',
+            relatedEntityId: requestRecord.id,
+          });
+        }
+      } else {
+        await safeNotifyUser({
+          recipientId: requestRecord.reportedById,
+          title: `Maintenance Rejected: ${requestRecord.requestNumber}`,
+          message: `Your maintenance request for '${requestRecord.resource.name}' was rejected: ${rejectionReason.trim()}`,
+          type: 'MAINTENANCE',
+          priority: 'HIGH',
+          actionUrl: '/maintenance',
+          relatedEntityType: 'MAINTENANCE_REQUEST',
+          relatedEntityId: requestRecord.id,
+        });
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -1089,6 +1153,61 @@ router.put('/:id/progress', requireAuth, async (req: AppRequest, res: AppRespons
       return { updatedRequest, custodyActionTaken };
     });
 
+    // Notify requester (and current custodian on completion)
+    if (requestRecord.reportedById) {
+      if (targetStatus === 'IN_PROGRESS') {
+        await safeNotifyUser({
+          recipientId: requestRecord.reportedById,
+          title: `Repair Started: ${requestRecord.requestNumber}`,
+          message: `Repair work has started for '${requestRecord.resource.name}'.${diagnosis ? ' Diagnosis: ' + diagnosis.trim() : ''}`,
+          type: 'MAINTENANCE',
+          priority: 'NORMAL',
+          actionUrl: '/maintenance',
+          relatedEntityType: 'MAINTENANCE_REQUEST',
+          relatedEntityId: requestRecord.id,
+        });
+      } else if (targetStatus === 'ON_HOLD') {
+        const holdReason = (notes || resolutionNotes || diagnosis || 'Awaiting parts / technical review').trim();
+        await safeNotifyUser({
+          recipientId: requestRecord.reportedById,
+          title: `Repair On Hold: ${requestRecord.requestNumber}`,
+          message: `Repair work for '${requestRecord.resource.name}' was placed on hold: ${holdReason}`,
+          type: 'MAINTENANCE',
+          priority: 'HIGH',
+          actionUrl: '/maintenance',
+          relatedEntityType: 'MAINTENANCE_REQUEST',
+          relatedEntityId: requestRecord.id,
+        });
+      } else if (targetStatus === 'COMPLETED') {
+        await safeNotifyUser({
+          recipientId: requestRecord.reportedById,
+          title: `Repair Completed: ${requestRecord.requestNumber}`,
+          message: `Repair work for '${requestRecord.resource.name}' has been completed (${outcome}). Condition: ${conditionOnCompletion}.`,
+          type: 'MAINTENANCE',
+          priority: 'NORMAL',
+          actionUrl: '/maintenance',
+          relatedEntityType: 'MAINTENANCE_REQUEST',
+          relatedEntityId: requestRecord.id,
+        });
+
+        if (requestRecord.resource.currentAssigneeId) {
+          const custodianUserId = await resolveEmployeeUserId(requestRecord.resource.currentAssigneeId);
+          if (custodianUserId && custodianUserId !== requestRecord.reportedById) {
+            await safeNotifyUser({
+              recipientId: custodianUserId,
+              title: `Equipment Repaired: ${requestRecord.resource.name}`,
+              message: `Servicing on assigned equipment '${requestRecord.resource.name}' is complete and ready for use.`,
+              type: 'MAINTENANCE',
+              priority: 'NORMAL',
+              actionUrl: '/resources',
+              relatedEntityType: 'RESOURCE',
+              relatedEntityId: requestRecord.resourceId,
+            });
+          }
+        }
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: `Maintenance request ${result.updatedRequest.requestNumber} updated to ${targetStatus}`,
@@ -1192,6 +1311,20 @@ router.post('/:id/inspections', requireAuth, async (req: AppRequest, res: AppRes
       referenceId: requestRecord.requestNumber,
       details: `QA Inspection (${inspectionType}): ${passed ? 'PASSED' : 'FAILED'}. Findings: ${findings.trim()}${certificationNumber ? ` [Cert #${certificationNumber.trim()}]` : ''}`,
     });
+
+    // Notify requester of QA results
+    if (requestRecord.reportedById) {
+      await safeNotifyUser({
+        recipientId: requestRecord.reportedById,
+        title: `QA Inspection ${passed ? 'Passed' : 'Failed'}: ${requestRecord.requestNumber}`,
+        message: `QA Inspection (${inspectionType}) completed: ${passed ? 'PASSED' : 'FAILED'}. Findings: ${findings.trim()}`,
+        type: 'MAINTENANCE',
+        priority: passed ? 'NORMAL' : 'HIGH',
+        actionUrl: '/maintenance',
+        relatedEntityType: 'MAINTENANCE_REQUEST',
+        relatedEntityId: requestRecord.id,
+      });
+    }
 
     return res.status(201).json({
       success: true,
