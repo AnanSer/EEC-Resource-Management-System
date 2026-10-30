@@ -127,7 +127,7 @@ export const maintenanceService = {
       partsReplaced?: string;
       actualCostETB?: number;
       resolutionNotes?: string;
-      outcome?: 'REPAIRED_FIT_FOR_USE' | 'BEYOND_ECONOMIC_REPAIR' | 'DISPOSED';
+      outcome?: 'REPAIRED_FIT_FOR_USE' | 'REQUIRES_FURTHER_REPAIR' | 'BEYOND_ECONOMIC_REPAIR' | 'DISPOSED';
       conditionOnCompletion?: string;
       findings?: string; // backwards compat
       notes?: string;

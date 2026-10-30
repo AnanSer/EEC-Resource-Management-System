@@ -342,7 +342,7 @@ export const ResourceDetailPage: React.FC = () => {
                    currentRole === 'IT_TECHNICIAN' ||
                    currentRole === 'STORE_KEEPER' ||
                    (currentRole === 'DEPARTMENT_MANAGER' && resource.currentDepartmentId === currentUser?.departmentId) ||
-                   (currentRole === 'EMPLOYEE' && (resource.currentDepartmentId === currentUser?.departmentId || resource.currentAssigneeId === currentUser?.id)))
+                   (currentRole === 'EMPLOYEE' && resource.currentAssigneeId === currentUser?.id))
                 ) && (
                   <button
                     type="button"

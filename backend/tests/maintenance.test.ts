@@ -146,17 +146,34 @@ async function runTests() {
 
     // 3. Maintenance Request Submission & Department Isolation
     console.log('\n--- 3. Maintenance Request Submission & Department Isolation ---');
-    // Find an available asset in dept-101
-    const dept101Asset = await prisma.resource.findFirst({
+    // Find an available asset in dept-101 (or ensure one exists for test)
+    let dept101Asset = await prisma.resource.findFirst({
       where: {
         departmentId: 'dept-101',
         status: 'AVAILABLE',
       },
     });
+    if (!dept101Asset) {
+      dept101Asset = await prisma.resource.upsert({
+        where: { itemCode: 'EEC-TEST-MNT-101' },
+        update: { status: 'AVAILABLE', currentAssigneeId: null, departmentId: 'dept-101' },
+        create: {
+          itemCode: 'EEC-TEST-MNT-101',
+          name: 'Leica TS16 Total Station (Field Unit)',
+          category: 'SURVEYING_GEOTECHNICAL',
+          status: 'AVAILABLE',
+          condition: 'GOOD',
+          location: 'Headquarters - Floor 4 Survey Lab',
+          departmentId: 'dept-101',
+          purchaseCostETB: 120000,
+          currentValueETB: 120000,
+        },
+      });
+    }
     assert(!!dept101Asset, 'Found available asset in dept-101');
 
-    // Employee reports defect in own department
-    const empReportRes = await request('POST', '/api/maintenance', {
+    // Regression check: Employee blocked from reporting unassigned department resource
+    const empUnassignedReport = await request('POST', '/api/maintenance', {
       cookie: employeeCookie,
       body: {
         resourceId: dept101Asset!.id,
@@ -166,11 +183,24 @@ async function runTests() {
         estimatedCostETB: 8500,
       },
     });
-    assert(empReportRes.status === 201, 'Employee can submit maintenance request for department resource');
-    const createdTicket1 = empReportRes.body?.request;
+    assert(empUnassignedReport.status === 403, 'Employee cannot report a fault on unassigned departmental equipment (403)');
+
+    // Department Manager reports defect in own department
+    const mgrReportRes = await request('POST', '/api/maintenance', {
+      cookie: managerCookie,
+      body: {
+        resourceId: dept101Asset!.id,
+        title: 'Laser Level Calibration Drift',
+        description: 'Laser line shows 3mm deviation over 10m range during morning inspection.',
+        priority: 'HIGH',
+        estimatedCostETB: 8500,
+      },
+    });
+    assert(mgrReportRes.status === 201, 'Department Manager can submit maintenance request for department resource');
+    const createdTicket1 = mgrReportRes.body?.request;
     assert(!!createdTicket1?.requestNumber, 'Ticket has formatted requestNumber (MNT-YYYY-XXXX)');
     assert(createdTicket1?.status === 'SUBMITTED', 'Initial status is SUBMITTED');
-    assert(createdTicket1?.reportedByName === 'Haile Gebrselassie' || !!createdTicket1?.reportedByName, 'Reporter name recorded');
+    assert(createdTicket1?.reportedByName?.length > 0, 'Reporter name recorded');
 
     // Verify resource transitioned to MAINTENANCE
     const resAfterReport = await prisma.resource.findUnique({ where: { id: dept101Asset!.id } });
@@ -178,7 +208,7 @@ async function runTests() {
 
     // Duplicate active maintenance check
     const dupRes = await request('POST', '/api/maintenance', {
-      cookie: employeeCookie,
+      cookie: managerCookie,
       body: {
         resourceId: dept101Asset!.id,
         title: 'Another defect report',
@@ -259,13 +289,30 @@ async function runTests() {
 
     // Invalid transition: cannot jump directly from SUBMITTED to COMPLETED
     // Create another ticket to test invalid transition
-    const dept101Asset2 = await prisma.resource.findFirst({
+    let dept101Asset2 = await prisma.resource.findFirst({
       where: {
         departmentId: 'dept-101',
         status: 'AVAILABLE',
         id: { not: dept101Asset!.id },
       },
     });
+    if (!dept101Asset2) {
+      dept101Asset2 = await prisma.resource.upsert({
+        where: { itemCode: 'EEC-TEST-MNT-102' },
+        update: { status: 'AVAILABLE', currentAssigneeId: null, departmentId: 'dept-101' },
+        create: {
+          itemCode: 'EEC-TEST-MNT-102',
+          name: 'Topcon Auto Level AT-B4A',
+          category: 'SURVEYING_GEOTECHNICAL',
+          status: 'AVAILABLE',
+          condition: 'GOOD',
+          location: 'Headquarters - Floor 4 Survey Lab',
+          departmentId: 'dept-101',
+          purchaseCostETB: 45000,
+          currentValueETB: 45000,
+        },
+      });
+    }
 
     if (dept101Asset2) {
       const ticket2Res = await request('POST', '/api/maintenance', {
@@ -533,7 +580,7 @@ async function runTests() {
 
     const emp2Record = await prisma.employee.upsert({
       where: { employeeId: 'EEC-EMP-TEST-101' },
-      update: { userId: emp2User.id, departmentId: 'dept-101', role: 'EMPLOYEE' },
+      update: { userId: emp2User.id, departmentId: 'dept-101', role: 'EMPLOYEE', isActive: true },
       create: {
         employeeId: 'EEC-EMP-TEST-101',
         name: 'Solomon Test Employee',
@@ -543,6 +590,7 @@ async function runTests() {
         designation: 'Junior Highway Engineer',
         role: 'EMPLOYEE',
         userId: emp2User.id,
+        isActive: true,
       },
     });
 
@@ -603,12 +651,20 @@ async function runTests() {
     assert(mgr2ReviewTicket1.status === 403, 'Department Manager in dept-102 blocked with 403 from reviewing dept-101 ticket');
 
     // D. Custodian exception: Employee CAN view ticket for equipment in their active custody even if reported by another user
-    const assetForCustodyTest = await prisma.resource.findFirst({
-      where: {
-        departmentId: 'dept-101',
+    const assetForCustodyTest = await prisma.resource.upsert({
+      where: { itemCode: 'EEC-TEST-CUSTODY-VIEW' },
+      update: { status: 'AVAILABLE', currentAssigneeId: null, departmentId: 'dept-101' },
+      create: {
+        itemCode: 'EEC-TEST-CUSTODY-VIEW',
+        name: 'Custody View Test Asset',
+        category: 'SURVEYING_GEOTECHNICAL',
         status: 'AVAILABLE',
+        condition: 'GOOD',
+        location: 'Central Store',
+        departmentId: 'dept-101',
       },
     });
+    await prisma.resourceAssignment.deleteMany({ where: { resourceId: assetForCustodyTest.id } });
 
     if (assetForCustodyTest) {
       // Assign to emp2Record
@@ -653,6 +709,514 @@ async function runTests() {
     assert(finalTicket1State?.reportedById === createdTicket1.reportedById, 'Ticket reportedById remains immutable');
     assert(finalTicket1State?.reportedByName === createdTicket1.reportedByName, 'Ticket reportedByName remains immutable');
     assert(finalTicket1State?.reportedByRole === createdTicket1.reportedByRole, 'Ticket reportedByRole remains immutable');
+
+    // 10. Advanced Equipment Scoping, Submission Feedback, Detail Logs & Technician Actions
+    console.log('\n--- 10. Advanced Equipment Scoping, Submission Feedback, Detail Logs & Technician Actions ---');
+
+    // A. Backend blocks Employee from reporting on asset assigned to another employee
+    // Find an asset currently assigned to Haile (employee@eec.gov.et)
+    const haileEmp = await prisma.employee.findFirst({ where: { email: 'employee@eec.gov.et' } });
+    const haileAssignedAsset = await prisma.resource.findFirst({
+      where: { currentAssigneeId: haileEmp!.id },
+    });
+
+    if (haileAssignedAsset) {
+      // Employee B tries to report fault on Haile's assigned asset
+      const emp2ReportHaileAsset = await request('POST', '/api/maintenance', {
+        cookie: emp2Cookie,
+        body: {
+          resourceId: haileAssignedAsset.id,
+          title: 'Unauthorized fault report on colleague asset',
+          description: 'Employee B trying to report defect on equipment assigned to Employee A.',
+        },
+      });
+      assert(emp2ReportHaileAsset.status === 403, 'Employee B blocked with 403 when reporting equipment assigned to another employee');
+    }
+
+    // B. Store Keeper reporting boundaries:
+    // Store Keeper blocked from reporting on field-assigned asset
+    if (haileAssignedAsset) {
+      const storeKeeperReportAssigned = await request('POST', '/api/maintenance', {
+        cookie: storeKeeperCookie,
+        body: {
+          resourceId: haileAssignedAsset.id,
+          title: 'Store Keeper reporting assigned asset',
+          description: 'Store Keeper attempting to report on employee field asset.',
+        },
+      });
+      assert(storeKeeperReportAssigned.status === 403, 'Store Keeper blocked with 403 when reporting asset assigned to field employee');
+    }
+
+    // Store Keeper reports on unassigned inventory asset
+    const unassignedStoreAsset = await prisma.resource.findFirst({
+      where: {
+        currentAssigneeId: null,
+        status: 'AVAILABLE',
+      },
+    });
+
+    let storeTicketId = '';
+    if (unassignedStoreAsset) {
+      const storeReportRes = await request('POST', '/api/maintenance', {
+        cookie: storeKeeperCookie,
+        body: {
+          resourceId: unassignedStoreAsset.id,
+          title: 'Warehouse pallet damage during intake',
+          description: 'Forklift fork punctured battery housing during warehouse transfer.',
+          priority: 'HIGH',
+          estimatedCostETB: 5000,
+        },
+      });
+      assert(storeReportRes.status === 201, 'Store Keeper can report fault on unassigned inventory equipment (201)');
+      const stTicket = storeReportRes.body?.request;
+      assert(!!stTicket?.requestNumber, `Submission feedback contains formatted request number: ${stTicket?.requestNumber}`);
+      assert(stTicket?.status === 'SUBMITTED', 'Work order created in SUBMITTED state');
+      storeTicketId = stTicket?.id;
+    }
+
+    // C. Ticket Details endpoint returns full logs and metadata
+    if (storeTicketId) {
+      const detailRes = await request('GET', `/api/maintenance/${storeTicketId}`, { cookie: adminCookie });
+      assert(detailRes.status === 200, 'Ticket detail endpoint returns 200');
+      assert(detailRes.body?.request?.requestNumber?.length > 0, 'Details include requestNumber');
+      assert(detailRes.body?.request?.resourceName?.length > 0, 'Details include resourceName');
+      assert(Array.isArray(detailRes.body?.request?.logs), 'Details include logs array');
+      assert(detailRes.body?.request?.logs?.length >= 1, 'Details contain submission log entry');
+
+      // D. Full technician repair workflow with hold validation and damaged outcome
+      // Admin approves the store ticket
+      await request('POST', `/api/maintenance/${storeTicketId}/review`, {
+        cookie: adminCookie,
+        body: { action: 'APPROVE', comments: 'Approved for central workshop inspection' },
+      });
+
+      // Non-technician (Department Manager) blocked from technical repair
+      const mgrProgressRes = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: managerCookie,
+        body: { status: 'IN_PROGRESS', diagnosis: 'Manager diagnosing' },
+      });
+      assert(mgrProgressRes.status === 403, 'Department Manager blocked with 403 from executing technician servicing');
+
+      // Technician starts repair
+      const techStartRes = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: techCookie,
+        body: {
+          status: 'IN_PROGRESS',
+          diagnosis: 'Housing punctured; internal PCB trace severed.',
+          assignedTechnicianName: 'Kenenisa Bekele',
+        },
+      });
+      assert(techStartRes.status === 200, 'Technician transitions ticket to IN_PROGRESS');
+
+      // Technician attempts ON_HOLD without reason -> must be rejected with 400
+      const noReasonHold = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: techCookie,
+        body: { status: 'ON_HOLD' },
+      });
+      assert(noReasonHold.status === 400, 'Placing work order on hold without reason is rejected with 400 Bad Request');
+
+      // Technician places ON_HOLD with specific reason
+      const validHold = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: techCookie,
+        body: {
+          status: 'ON_HOLD',
+          notes: 'Awaiting specialized circuit board replacement from manufacturer.',
+        },
+      });
+      assert(validHold.status === 200, 'Technician places work order ON_HOLD with specific reason (200)');
+      assert(validHold.body?.request?.status === 'ON_HOLD', 'Status updated to ON_HOLD');
+
+      // Technician resumes work order
+      const resumeRes = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: techCookie,
+        body: { status: 'IN_PROGRESS', notes: 'Replacement circuit board received' },
+      });
+      assert(resumeRes.status === 200, 'Technician resumes work order to IN_PROGRESS (200)');
+
+      // Technician updates progress while IN_PROGRESS (intermediate servicing details update)
+      const intermediateProgressRes = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: techCookie,
+        body: {
+          status: 'IN_PROGRESS',
+          diagnosis: 'Re-bench-tested; primary micro-controller intact.',
+          repairActions: 'Soldered replacement bypass diode.',
+          partsReplaced: 'Bypass diode #DIO-4001',
+          actualCostETB: 1200,
+          notes: 'Midway bench servicing completed smoothly',
+        },
+      });
+      assert(intermediateProgressRes.status === 200, 'Technician can update servicing progress on IN_PROGRESS ticket (200)');
+      assert(intermediateProgressRes.body?.request?.partsReplaced === 'Bypass diode #DIO-4001', 'Parts replaced updated');
+
+      // Unauthorized roles blocked from technician repair endpoint
+      const empProgressBlock = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: employeeCookie,
+        body: { status: 'IN_PROGRESS', notes: 'Employee trying to repair' },
+      });
+      assert(empProgressBlock.status === 403, 'EMPLOYEE blocked with 403 from executing technician repairs');
+
+      const storeProgressBlock = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: storeKeeperCookie,
+        body: { status: 'IN_PROGRESS', notes: 'Store keeper trying to repair' },
+      });
+      assert(storeProgressBlock.status === 403, 'STORE_KEEPER blocked with 403 from executing technician repairs');
+
+      // IT_TECHNICIAN blocked from administrative review endpoint
+      const techReviewBlock = await request('POST', `/api/maintenance/${storeTicketId}/review`, {
+        cookie: techCookie,
+        body: { action: 'APPROVE', comments: 'Technician trying to approve' },
+      });
+      assert(techReviewBlock.status === 403, 'IT_TECHNICIAN blocked with 403 from reviewing/approving requests');
+
+      // Technician completes with outcome REQUIRES_FURTHER_REPAIR (Damaged asset remains in MAINTENANCE)
+      const completeDamagedRes = await request('PUT', `/api/maintenance/${storeTicketId}/progress`, {
+        cookie: techCookie,
+        body: {
+          status: 'COMPLETED',
+          repairActions: 'Installed replacement PCB board; power rail still shorting to chassis.',
+          resolutionNotes: 'Asset still exhibits high impedance short; requires authorized manufacturer depot overhaul.',
+          outcome: 'REQUIRES_FURTHER_REPAIR',
+          conditionOnCompletion: 'POOR',
+          actualCostETB: 3200,
+        },
+      });
+      assert(completeDamagedRes.status === 200, 'Technician completed repair work with outcome REQUIRES_FURTHER_REPAIR');
+      assert(completeDamagedRes.body?.custodyAction === 'REMAINS_IN_MAINTENANCE', 'custodyAction is REMAINS_IN_MAINTENANCE');
+
+      // Verify resource remains in MAINTENANCE
+      const damagedAssetDb = await prisma.resource.findUnique({ where: { id: unassignedStoreAsset.id } });
+      assert(damagedAssetDb?.status === 'MAINTENANCE', 'Damaged asset remains in MAINTENANCE when further repair required');
+      assert(damagedAssetDb?.condition === 'POOR', 'Asset condition updated to POOR');
+    }
+
+    // 11. Employee Equipment Active Custody Selection & Reporting Security Rules
+    console.log('\n--- 11. Employee Equipment Active Custody Selection & Reporting Security Rules ---');
+
+    // Retrieve Haile's employee record and Colleague's record
+    const haileRecord = await prisma.employee.findFirst({ where: { email: 'employee@eec.gov.et' } });
+    const colleagueRecord = emp2Record;
+    assert(!!haileRecord, 'Found Haile employee record');
+    assert(!!colleagueRecord, 'Found Colleague record');
+
+    // Setup Test Resource 1: Assigned to Haile with active ResourceAssignment
+    const myActiveAsset = await prisma.resource.upsert({
+      where: { itemCode: 'EEC-CUSTODY-TEST-01' },
+      update: {
+        status: 'ASSIGNED',
+        currentAssigneeId: haileRecord!.id,
+        departmentId: 'dept-101',
+      },
+      create: {
+        itemCode: 'EEC-CUSTODY-TEST-01',
+        name: 'Trimble R12 GNSS Field Rover (Haile Active)',
+        category: 'SURVEYING_GEOTECHNICAL',
+        status: 'ASSIGNED',
+        condition: 'GOOD',
+        location: 'Kersa Dam Project - Field Site B',
+        departmentId: 'dept-101',
+        currentAssigneeId: haileRecord!.id,
+        purchaseCostETB: 240000,
+        currentValueETB: 240000,
+      },
+    });
+
+    // Ensure active assignment record exists
+    const activeAssign01 = await prisma.resourceAssignment.upsert({
+      where: { assignmentNumber: 'ASN-TEST-CUSTODY-01' },
+      update: {
+        resourceId: myActiveAsset.id,
+        employeeId: haileRecord!.id,
+        departmentId: 'dept-101',
+        status: 'ACTIVE',
+        isCurrent: true,
+      },
+      create: {
+        assignmentNumber: 'ASN-TEST-CUSTODY-01',
+        resourceId: myActiveAsset.id,
+        employeeId: haileRecord!.id,
+        departmentId: 'dept-101',
+        assignedByName: 'Derartu Tulu',
+        purpose: 'Topographic field survey',
+        status: 'ACTIVE',
+        isCurrent: true,
+      },
+    });
+    assert(!!activeAssign01, 'Active custody assignment verified in database');
+
+    // a. Employee can report a fault on their own actively assigned equipment
+    const empOwnReportRes = await request('POST', '/api/maintenance', {
+      cookie: employeeCookie,
+      body: {
+        resourceId: myActiveAsset.id,
+        title: 'GNSS Antenna Signal Loss',
+        description: 'Receiver intermittently loses RTK satellite lock under overcast skies.',
+        priority: 'MEDIUM',
+      },
+    });
+    assert(empOwnReportRes.status === 201, 'Employee can report a fault on their own actively assigned equipment (201)');
+    const ownTicket = empOwnReportRes.body?.request;
+    assert(ownTicket?.custodianIdAtRequest === haileRecord!.id, 'Custodian ID at request matches active employee');
+    assert(ownTicket?.status === 'SUBMITTED', 'Maintenance ticket created in SUBMITTED state');
+
+    // Employee cannot report equipment already under MAINTENANCE (duplicate protection)
+    const dupOnMaintRes = await request('POST', '/api/maintenance', {
+      cookie: employeeCookie,
+      body: {
+        resourceId: myActiveAsset.id,
+        title: 'Duplicate fault report while in maintenance',
+        description: 'Testing duplicate rejection',
+      },
+    });
+    assert(dupOnMaintRes.status === 409, 'Employee cannot report equipment already under MAINTENANCE (409)');
+
+    // Reject the maintenance ticket so test completes cleanly
+    await request('POST', `/api/maintenance/${ownTicket.id}/review`, {
+      cookie: adminCookie,
+      body: { action: 'REJECT', rejectionReason: 'Test completed' },
+    });
+
+    // b. Employee cannot report a fault on unassigned departmental equipment
+    const unassignedDeptAsset = await prisma.resource.upsert({
+      where: { itemCode: 'EEC-CUSTODY-TEST-02' },
+      update: {
+        status: 'AVAILABLE',
+        currentAssigneeId: null,
+        departmentId: 'dept-101',
+      },
+      create: {
+        itemCode: 'EEC-CUSTODY-TEST-02',
+        name: 'Concrete Schmidt Rebound Hammer (Unassigned)',
+        category: 'SURVEYING_GEOTECHNICAL',
+        status: 'AVAILABLE',
+        condition: 'GOOD',
+        location: 'Central Store',
+        departmentId: 'dept-101',
+        currentAssigneeId: null,
+      },
+    });
+
+    const empUnassignedBlock = await request('POST', '/api/maintenance', {
+      cookie: employeeCookie,
+      body: {
+        resourceId: unassignedDeptAsset.id,
+        title: 'Spring trigger stuck',
+        description: 'Employee trying to report unassigned equipment in same department.',
+      },
+    });
+    assert(empUnassignedBlock.status === 403, 'Employee cannot report a fault on unassigned departmental equipment (403)');
+
+    // c. Employee cannot report a fault on another employee equipment
+    const colleagueAsset = await prisma.resource.upsert({
+      where: { itemCode: 'EEC-CUSTODY-TEST-03' },
+      update: {
+        status: 'ASSIGNED',
+        currentAssigneeId: colleagueRecord!.id,
+        departmentId: 'dept-101',
+      },
+      create: {
+        itemCode: 'EEC-CUSTODY-TEST-03',
+        name: 'Dell Precision 7560 (Almaz Laptop)',
+        category: 'IT_EQUIPMENT',
+        status: 'ASSIGNED',
+        condition: 'GOOD',
+        location: 'HQ Floor 3',
+        departmentId: 'dept-101',
+        currentAssigneeId: colleagueRecord!.id,
+      },
+    });
+    await prisma.resourceAssignment.upsert({
+      where: { assignmentNumber: 'ASN-TEST-CUSTODY-03' },
+      update: {
+        resourceId: colleagueAsset.id,
+        employeeId: colleagueRecord!.id,
+        departmentId: 'dept-101',
+        status: 'ACTIVE',
+        isCurrent: true,
+      },
+      create: {
+        assignmentNumber: 'ASN-TEST-CUSTODY-03',
+        resourceId: colleagueAsset.id,
+        employeeId: colleagueRecord!.id,
+        departmentId: 'dept-101',
+        assignedByName: 'Derartu Tulu',
+        purpose: 'CAD drafting workstation',
+        status: 'ACTIVE',
+        isCurrent: true,
+      },
+    });
+
+    const empColleagueBlock = await request('POST', '/api/maintenance', {
+      cookie: employeeCookie,
+      body: {
+        resourceId: colleagueAsset.id,
+        title: 'Fan making loud noise',
+        description: 'Haile trying to report fault on Almaz laptop.',
+      },
+    });
+    assert(empColleagueBlock.status === 403, 'Employee cannot report a fault on another employee equipment (403)');
+
+    // d. Employee cannot report a fault on equipment with no valid active assignment
+    // Sub-case 1: currentAssigneeId is Haile, but assignment is RETURNED (historical only, isCurrent = false)
+    const historicalOnlyAsset = await prisma.resource.upsert({
+      where: { itemCode: 'EEC-CUSTODY-TEST-04' },
+      update: {
+        status: 'AVAILABLE',
+        currentAssigneeId: haileRecord!.id,
+        departmentId: 'dept-101',
+      },
+      create: {
+        itemCode: 'EEC-CUSTODY-TEST-04',
+        name: 'Digital Theodolite (Returned Custody)',
+        category: 'SURVEYING_GEOTECHNICAL',
+        status: 'AVAILABLE',
+        condition: 'GOOD',
+        location: 'Central Store',
+        departmentId: 'dept-101',
+        currentAssigneeId: haileRecord!.id,
+      },
+    });
+    await prisma.resourceAssignment.upsert({
+      where: { assignmentNumber: 'ASN-TEST-CUSTODY-04' },
+      update: {
+        resourceId: historicalOnlyAsset.id,
+        employeeId: haileRecord!.id,
+        departmentId: 'dept-101',
+        status: 'RETURNED',
+        isCurrent: false,
+      },
+      create: {
+        assignmentNumber: 'ASN-TEST-CUSTODY-04',
+        resourceId: historicalOnlyAsset.id,
+        employeeId: haileRecord!.id,
+        departmentId: 'dept-101',
+        assignedByName: 'Derartu Tulu',
+        purpose: 'Survey assignment',
+        status: 'RETURNED',
+        isCurrent: false,
+      },
+    });
+
+    const empHistoricalBlock = await request('POST', '/api/maintenance', {
+      cookie: employeeCookie,
+      body: {
+        resourceId: historicalOnlyAsset.id,
+        title: 'Display backlight flickering',
+        description: 'Attempting to report on previously returned equipment without active assignment record.',
+      },
+    });
+    assert(empHistoricalBlock.status === 403, 'Employee cannot report a fault on equipment with RETURNED/isCurrent=false assignment (403)');
+
+    // Sub-case 2: currentAssigneeId is Haile, but NO ResourceAssignment record exists
+    const noAssignmentAsset = await prisma.resource.upsert({
+      where: { itemCode: 'EEC-CUSTODY-TEST-05' },
+      update: {
+        status: 'AVAILABLE',
+        currentAssigneeId: haileRecord!.id,
+        departmentId: 'dept-101',
+      },
+      create: {
+        itemCode: 'EEC-CUSTODY-TEST-05',
+        name: 'Auto-Level Topcon AT-B4A (No Assignment Record)',
+        category: 'SURVEYING_GEOTECHNICAL',
+        status: 'AVAILABLE',
+        condition: 'GOOD',
+        location: 'Central Store',
+        departmentId: 'dept-101',
+        currentAssigneeId: haileRecord!.id,
+      },
+    });
+    await prisma.resourceAssignment.deleteMany({ where: { resourceId: noAssignmentAsset.id } });
+
+    const empNoAssignmentBlock = await request('POST', '/api/maintenance', {
+      cookie: employeeCookie,
+      body: {
+        resourceId: noAssignmentAsset.id,
+        title: 'Compensator stuck',
+        description: 'Attempting to report equipment with no valid active assignment record.',
+      },
+    });
+    assert(empNoAssignmentBlock.status === 403, 'Employee cannot report a fault on equipment with no active custody assignment record (403)');
+
+    // Clean up temporary stale pointers
+    await prisma.resource.update({ where: { id: historicalOnlyAsset.id }, data: { currentAssigneeId: null } });
+    await prisma.resource.update({ where: { id: noAssignmentAsset.id }, data: { currentAssigneeId: null } });
+
+    // Verify authorized roles retain existing permissions:
+    // 1. ADMIN can report any resource
+    const adminReportCustodyTest = await request('POST', '/api/maintenance', {
+      cookie: adminCookie,
+      body: {
+        resourceId: unassignedDeptAsset.id,
+        title: 'Admin reporting defect on unassigned asset',
+        description: 'Admin enterprise-wide reporting check',
+      },
+    });
+    assert(adminReportCustodyTest.status === 201, 'ADMIN retains authorized enterprise-wide fault reporting (201)');
+    await request('POST', `/api/maintenance/${adminReportCustodyTest.body?.request?.id}/review`, {
+      cookie: adminCookie,
+      body: { action: 'REJECT', rejectionReason: 'Test completed' },
+    });
+
+    // 2. IT_TECHNICIAN can report any resource
+    const techReportCustodyTest = await request('POST', '/api/maintenance', {
+      cookie: techCookie,
+      body: {
+        resourceId: unassignedDeptAsset.id,
+        title: 'Technician workshop intake diagnostic',
+        description: 'Technician enterprise-wide reporting check',
+      },
+    });
+    assert(techReportCustodyTest.status === 201, 'IT_TECHNICIAN retains authorized fault reporting (201)');
+    await request('POST', `/api/maintenance/${techReportCustodyTest.body?.request?.id}/review`, {
+      cookie: adminCookie,
+      body: { action: 'REJECT', rejectionReason: 'Test completed' },
+    });
+
+    // 3. DEPARTMENT_MANAGER can report resources in own department
+    const mgrReportCustodyTest = await request('POST', '/api/maintenance', {
+      cookie: managerCookie,
+      body: {
+        resourceId: unassignedDeptAsset.id,
+        title: 'Department Manager reporting department asset',
+        description: 'Manager department reporting check',
+      },
+    });
+    assert(mgrReportCustodyTest.status === 201, 'DEPARTMENT_MANAGER retains authorized departmental reporting (201)');
+    await request('POST', `/api/maintenance/${mgrReportCustodyTest.body?.request?.id}/review`, {
+      cookie: adminCookie,
+      body: { action: 'REJECT', rejectionReason: 'Test completed' },
+    });
+
+    // Department Manager blocked on foreign department resource
+    const foreignDeptAsset = await prisma.resource.findFirst({
+      where: { departmentId: { not: 'dept-101' }, currentAssigneeId: null },
+    });
+    if (foreignDeptAsset) {
+      const mgrForeignBlock = await request('POST', '/api/maintenance', {
+        cookie: managerCookie,
+        body: {
+          resourceId: foreignDeptAsset.id,
+          title: 'Manager foreign report attempt',
+          description: 'Testing manager cross-department block',
+        },
+      });
+      assert(mgrForeignBlock.status === 403, 'DEPARTMENT_MANAGER blocked with 403 from reporting foreign department asset');
+    }
+
+    // 4. STORE_KEEPER can report unassigned inventory resources
+    const storeReportCustodyTest = await request('POST', '/api/maintenance', {
+      cookie: storeKeeperCookie,
+      body: {
+        resourceId: unassignedDeptAsset.id,
+        title: 'Store Keeper reporting unassigned store inventory',
+        description: 'Store inventory fault check',
+      },
+    });
+    assert(storeReportCustodyTest.status === 201, 'STORE_KEEPER retains authorized inventory reporting (201)');
+    await request('POST', `/api/maintenance/${storeReportCustodyTest.body?.request?.id}/review`, {
+      cookie: adminCookie,
+      body: { action: 'REJECT', rejectionReason: 'Test completed' },
+    });
 
     console.log(`\nTests Completed: ${passed} passed, ${failed} failed.`);
     if (failed > 0) {

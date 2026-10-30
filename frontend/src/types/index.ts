@@ -135,6 +135,7 @@ export interface Resource {
   condition: ResourceCondition;
   location: string;
   currentDepartmentId?: string;
+  departmentId?: string;
   currentDepartmentName?: string;
   currentAssigneeId?: string;
   currentAssigneeName?: string;
@@ -380,6 +381,7 @@ export interface InspectionTest {
   expiryDate?: string;
   remarks: string;
   date: string;
+  inspectedAt?: string;
   createdAt: string;
 }
 

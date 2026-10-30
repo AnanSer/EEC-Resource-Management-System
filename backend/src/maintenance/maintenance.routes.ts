@@ -485,15 +485,38 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       });
     }
 
-    // 2. Department boundary enforcement for Employee and Manager
+    // 2. Resource authority and department boundary enforcement
     const emp = await resolveEmployeeRecord(user);
     if (userRole === 'EMPLOYEE') {
-      const isAssignedToUser = emp && resource.currentAssigneeId === emp.id;
-      const isUserDepartment = resource.departmentId === userDeptId;
-      if (!isAssignedToUser && !isUserDepartment) {
+      if (!emp) {
         return res.status(403).json({
           success: false,
-          message: 'Forbidden: You can only report equipment within your assigned directorate or equipment currently in your custody.',
+          message: 'Forbidden: No linked employee record found for your user account.',
+        });
+      }
+
+      // Verify that the resource is currently assigned to this authenticated employee
+      if (!resource.currentAssigneeId || resource.currentAssigneeId !== emp.id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Employees may only report faults on equipment currently assigned to them (active custody). You cannot report unassigned equipment or assets assigned to other employees.',
+        });
+      }
+
+      // Verify that the selected resource has an active assignment belonging to the authenticated employee
+      const activeAssignment = await prisma.resourceAssignment.findFirst({
+        where: {
+          resourceId: resource.id,
+          employeeId: emp.id,
+          isCurrent: true,
+          status: 'ACTIVE',
+        },
+      });
+
+      if (!activeAssignment) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Equipment has no valid active custody assignment record for your account.',
         });
       }
     } else if (userRole === 'DEPARTMENT_MANAGER') {
@@ -503,9 +526,25 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
           message: 'Forbidden: Department managers may only submit maintenance requests for equipment belonging to their assigned directorate.',
         });
       }
+    } else if (userRole === 'STORE_KEEPER') {
+      const isOwnDept = resource.departmentId === userDeptId;
+      const isUnassignedInventory = !resource.currentAssigneeId;
+      if (!isOwnDept && !isUnassignedInventory) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Store Keeper may only report faults on unassigned inventory equipment or resources in their department.',
+        });
+      }
     }
 
     // 3. Prevent duplicate active maintenance requests on the same resource
+    if (resource.status === 'MAINTENANCE') {
+      return res.status(409).json({
+        success: false,
+        message: `Resource ${resource.name} (${resource.itemCode}) is already currently under MAINTENANCE.`,
+      });
+    }
+
     const existingActiveRequest = await prisma.maintenanceRequest.findFirst({
       where: {
         resourceId: resource.id,
@@ -624,7 +663,7 @@ router.post('/:id/review', requireAuth, async (req: AppRequest, res: AppResponse
       });
     }
 
-    if (!['ADMIN', 'DEPARTMENT_MANAGER', 'IT_TECHNICIAN'].includes(userRole)) {
+    if (!['ADMIN', 'DEPARTMENT_MANAGER'].includes(userRole)) {
       return res.status(403).json({
         success: false,
         message: 'Forbidden: Your role does not have authority to review maintenance requests',
@@ -858,16 +897,33 @@ router.put('/:id/progress', requireAuth, async (req: AppRequest, res: AppRespons
       }
     }
 
+    if (targetStatus === 'ON_HOLD') {
+      const holdReason = (notes || resolutionNotes || diagnosis || '').trim();
+      if (!holdReason) {
+        return res.status(400).json({
+          success: false,
+          message: 'A specific reason is mandatory when placing a work order on hold',
+        });
+      }
+    }
+
     const result = await prisma.$transaction(async (tx) => {
+      const resolvedTechName = assignedTechnicianName !== undefined
+        ? assignedTechnicianName
+        : (requestRecord.assignedTechnicianName || (userRole === 'IT_TECHNICIAN' ? user.fullName : undefined));
+      const resolvedTechId = assignedTechnicianId !== undefined
+        ? assignedTechnicianId
+        : (requestRecord.assignedTechnicianId || (userRole === 'IT_TECHNICIAN' ? user.id : undefined));
+
       const updateData: any = {
         status: targetStatus,
-        assignedTechnicianId: assignedTechnicianId !== undefined ? assignedTechnicianId : requestRecord.assignedTechnicianId,
-        assignedTechnicianName: assignedTechnicianName !== undefined ? assignedTechnicianName : requestRecord.assignedTechnicianName,
+        assignedTechnicianId: resolvedTechId,
+        assignedTechnicianName: resolvedTechName,
         diagnosis: diagnosis !== undefined ? diagnosis : requestRecord.diagnosis,
         repairActions: repairActions !== undefined ? repairActions : requestRecord.repairActions,
         partsReplaced: partsReplaced !== undefined ? partsReplaced : requestRecord.partsReplaced,
         actualCostETB: actualCostETB !== undefined ? Number(actualCostETB) : requestRecord.actualCostETB,
-        resolutionNotes: resolutionNotes !== undefined ? resolutionNotes : requestRecord.resolutionNotes,
+        resolutionNotes: resolutionNotes !== undefined ? resolutionNotes : (notes !== undefined ? notes : requestRecord.resolutionNotes),
       };
 
       if (targetStatus === 'IN_PROGRESS' && !requestRecord.startedAt) {
@@ -904,6 +960,14 @@ router.put('/:id/progress', requireAuth, async (req: AppRequest, res: AppRespons
             custodyActionTaken = 'RETURNED_TO_AVAILABLE';
             updateData.custodyAction = 'RETURNED_TO_AVAILABLE';
           }
+        } else if (outcome === 'REQUIRES_FURTHER_REPAIR' || outcome === 'DAMAGED_UNRESOLVED') {
+          // Damaged resources remain in MAINTENANCE when further repair is required
+          resourceStatusUpdate = {
+            status: 'MAINTENANCE',
+            condition: conditionOnCompletion || 'POOR',
+          };
+          custodyActionTaken = 'REMAINS_IN_MAINTENANCE';
+          updateData.custodyAction = 'REMAINS_IN_MAINTENANCE';
         } else if (outcome === 'BEYOND_ECONOMIC_REPAIR' || outcome === 'DISPOSED') {
           // Decommissioned asset: mark RETIRED or DISPOSED
           resourceStatusUpdate = {
@@ -944,7 +1008,9 @@ router.put('/:id/progress', requireAuth, async (req: AppRequest, res: AppRespons
           maintenanceRequestId: requestRecord.id,
           fromStatus: currentStatus,
           toStatus: targetStatus,
-          action: targetStatus === 'IN_PROGRESS' ? 'STARTED' : targetStatus,
+          action: targetStatus === 'IN_PROGRESS'
+            ? (currentStatus === 'IN_PROGRESS' ? 'PROGRESS_UPDATED' : 'STARTED')
+            : targetStatus,
           actorId: user.id,
           actorName: user.fullName,
           actorRole: userRole,
