@@ -15,6 +15,7 @@ import assignmentRouter from './assignments/assignment.routes';
 import requisitionRouter from './requisitions/requisition.routes';
 import maintenanceRouter from './maintenance/maintenance.routes';
 import reportRouter from './reports/report.routes';
+import notificationRouter from './notifications/notification.routes';
 
 // Load environment variables
 dotenv.config();
@@ -53,6 +54,7 @@ router.mount('/api/assignments', assignmentRouter);
 router.mount('/api/requisitions', requisitionRouter);
 router.mount('/api/maintenance', maintenanceRouter);
 router.mount('/api/reports', reportRouter);
+router.mount('/api/notifications', notificationRouter);
 
 // Root informational endpoint
 router.get('/', (_req: AppRequest, res: AppResponse) => {
