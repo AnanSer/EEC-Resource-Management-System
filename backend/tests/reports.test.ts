@@ -383,6 +383,136 @@ async function runTests() {
       assert(empForeignLifecycleRes.status === 403, 'Employee blocked with 403 on resource with no custody history');
     }
 
+    // 12. Fix Verification: Deliberately Long Values, Readability, No Truncation, Multi-page Wrapping, and Excel Export
+    console.log('\n--- 12. Deliberately Long Values, Readability & Excel Export ---');
+
+    // Create a test audit event with deliberately long resource name, actor name, and description
+    const longResourceName = 'Caterpillar 349D2 Hydraulic Excavator with Reinforced Heavy Duty Steel Arm and Auxiliary Breaker Valve System';
+    const longActorName = 'Lead Technical Specialist Dr. Woldeyesus Hailemariam Gebremichael';
+    const longDescription = 'Comprehensive 5000-hour major overhaul completed: Overhauled high-pressure hydraulic pumps, replaced boom cylinder oil seals, calibrated electronic throttle control unit to prevent engine stalling under peak load, and certified hydraulic pressure relief valve at 350 bar.';
+
+    const longAuditEvent = await prisma.auditEvent.create({
+      data: {
+        actionType: 'MAINTENANCE_COMPLETED',
+        resourceName: longResourceName,
+        resourceCode: 'EEC-EXC-LONG-099',
+        resourceCategory: 'HEAVY_MACHINERY',
+        departmentId: 'dept-101',
+        actorName: longActorName,
+        actorRole: 'IT_TECHNICIAN',
+        referenceId: 'MR-LONG-2026-999',
+        details: longDescription,
+        timestamp: new Date(),
+      },
+    });
+
+    // 12.1. Test CSV Export preserves complete original values without truncation
+    const longCsvRes = await request('GET', '/api/reports/audit/export/csv?search=EEC-EXC-LONG-099', { cookie: adminCookie });
+    assert(longCsvRes.status === 200, 'Admin can export filtered long event to CSV (200)');
+    const csvContent = typeof longCsvRes.body === 'string' ? longCsvRes.body : '';
+    assert(csvContent.startsWith('\uFEFF'), 'CSV retains UTF-8 BOM indicator');
+    assert(csvContent.includes(longResourceName), 'CSV contains full, untruncated long resource name');
+    assert(csvContent.includes(longActorName), 'CSV contains full, untruncated long actor name');
+    assert(csvContent.includes(longDescription), 'CSV contains full, untruncated long description');
+    assert(!csvContent.includes('Caterpillar 349D2 Hydraulic Excavator with...'), 'CSV does not truncate resource name with ...');
+
+    // 12.2. Test PDF Export preserves full content with multi-line wrapping and no truncation
+    const longPdfRes = await request('GET', '/api/reports/audit/export/pdf?search=EEC-EXC-LONG-099', { cookie: adminCookie });
+    assert(longPdfRes.status === 200, 'Admin can export filtered long event to PDF (200)');
+    const pdfRawText = typeof longPdfRes.body === 'string' ? longPdfRes.body : '';
+    assert(pdfRawText.startsWith('%PDF-1.4'), 'Long event PDF starts with %PDF-1.4');
+    // Ensure words from the start, middle, and end of the long texts are all present (proving no truncation)
+    assert(pdfRawText.includes('Caterpillar 349D2') && pdfRawText.includes('Breaker Valve System'), 'PDF contains full resource name across wrapped lines');
+    assert(pdfRawText.includes('Woldeyesus') && pdfRawText.includes('Gebremichael'), 'PDF contains full actor name without truncation');
+    assert(pdfRawText.includes('5000-hour') && pdfRawText.includes('350 bar'), 'PDF contains full description without truncation');
+    assert(!pdfRawText.includes('...'), 'PDF table rows do not truncate text with ellipsis');
+
+    // 12.3. Test Native Excel (.xlsx) Export
+    const xlsxRes = await request('GET', '/api/reports/audit/export/xlsx', { cookie: adminCookie });
+    assert(xlsxRes.status === 200, 'Admin can export audit trail to native Excel XLSX (200)');
+    const xlsxContentType = xlsxRes.headers['content-type'] || '';
+    assert(xlsxContentType.includes('spreadsheetml.sheet'), 'Excel Content-Type is spreadsheetml.sheet');
+    const xlsxDisposition = xlsxRes.headers['content-disposition'] || '';
+    assert(xlsxDisposition.includes('.xlsx'), 'Content-Disposition specifies .xlsx filename');
+    // Check raw binary output starts with PK (0x50 0x4B)
+    const xlsxRaw = typeof xlsxRes.body === 'string' ? xlsxRes.body : '';
+    assert(xlsxRaw.startsWith('PK'), 'Generated Excel XLSX starts with valid PKZIP signature');
+
+    // Filter verification on XLSX export
+    const filteredXlsxRes = await request('GET', '/api/reports/audit/export/xlsx?search=EEC-EXC-LONG-099', { cookie: adminCookie });
+    assert(filteredXlsxRes.status === 200, 'Filtered Excel export returns 200');
+    assert(typeof filteredXlsxRes.body === 'string' && filteredXlsxRes.body.startsWith('PK'), 'Filtered Excel export is valid ZIP workbook');
+
+    // 12.4. Role Scoping on Excel XLSX Export
+    const mgrForeignXlsxRes = await request('GET', '/api/reports/audit/export/xlsx?departmentId=dept-102', { cookie: managerCookie });
+    assert(mgrForeignXlsxRes.status === 403, 'Manager blocked with 403 from exporting foreign department XLSX');
+
+    // 12.5. Root Cause Verification: Fix Blank First PDF Page & Multi-Page Pagination
+    console.log('\n--- 13. Blank First Page Fix & Multi-Page PDF Verification ---');
+
+    // 13.1. Short Report: Exactly 1 page, starts immediately on Page 1 (no blank page)
+    const shortPdfRes = await request('GET', '/api/reports/audit/export/pdf?search=EEC-EXC-LONG-099', { cookie: adminCookie });
+    assert(shortPdfRes.status === 200, 'Short PDF export returns 200');
+    const shortPdfRaw = typeof shortPdfRes.body === 'string' ? shortPdfRes.body : '';
+    const shortPagesCount = (shortPdfRaw.match(/\/Type \/Page\b/g) || []).length;
+    assert(shortPagesCount === 1, 'Short PDF has exactly 1 page (no blank first page)');
+    const shortCountMatch = shortPdfRaw.match(/\/Count (\d+)/);
+    assert(shortCountMatch?.[1] === '1', 'PDF catalog /Count indicates exactly 1 page');
+    
+    // Extract first stream content
+    const shortStreams = [...shortPdfRaw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)];
+    assert(shortStreams.length === 1, 'Short PDF contains exactly 1 content stream');
+    const page1Stream = shortStreams[0]?.[1] || '';
+    assert(page1Stream.includes('RESOURCE AUDIT TRAIL REPORT'), 'Page 1 contains document title');
+    assert(page1Stream.includes('Corporate Audit Trail'), 'Page 1 contains header block');
+    assert(page1Stream.includes('OPERATIONAL DETAILS'), 'Page 1 contains table header');
+    assert(page1Stream.includes('Caterpillar 349D2'), 'Page 1 contains table data rows');
+    assert(page1Stream.length > 2000, 'Page 1 stream contains full content (not a 240-byte empty stub)');
+
+    // 13.2. Multi-Page Report: Create enough events to guarantee multi-page generation
+    const batchEventsData = Array.from({ length: 35 }, (_, idx) => ({
+      actionType: idx % 2 === 0 ? 'RESOURCE_ASSIGNED' : 'MAINTENANCE_PROGRESS',
+      resourceName: `Distribution Transformer 33kV Phase #${idx + 1}`,
+      resourceCode: `EEC-TRF-PAGE-${String(idx).padStart(3, '0')}`,
+      resourceCategory: 'ELECTRICAL_INFRASTRUCTURE',
+      departmentId: 'dept-101',
+      actorName: `Field Maintenance Officer #${idx + 1}`,
+      actorRole: 'STORE_KEEPER',
+      referenceId: `PAGE-TEST-${String(idx).padStart(4, '0')}`,
+      details: `Periodic oil breakdown voltage test and bushing inspection completed successfully for transformer #${idx + 1}.`,
+      timestamp: new Date(),
+    }));
+
+    await prisma.auditEvent.createMany({ data: batchEventsData });
+
+    const multiPagePdfRes = await request('GET', '/api/reports/audit/export/pdf?search=PAGE-TEST-', { cookie: adminCookie });
+    assert(multiPagePdfRes.status === 200, 'Multi-page PDF export returns 200');
+    const multiPdfRaw = typeof multiPagePdfRes.body === 'string' ? multiPagePdfRes.body : '';
+    const multiPagesCount = (multiPdfRaw.match(/\/Type \/Page\b/g) || []).length;
+    assert(multiPagesCount >= 2, `Multi-page PDF generated ${multiPagesCount} pages (>= 2)`);
+
+    const multiStreams = [...multiPdfRaw.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)];
+    assert(multiStreams.length === multiPagesCount, 'Stream count matches page count');
+
+    // Page 1 contains title, metadata, table header, and data
+    const mPage1 = multiStreams[0]?.[1] || '';
+    assert(mPage1.includes('RESOURCE AUDIT TRAIL REPORT'), 'Multi-page Page 1 contains document title');
+    assert(mPage1.includes('OPERATIONAL DETAILS'), 'Multi-page Page 1 contains table header');
+    assert(mPage1.includes('Distribution Transformer'), 'Multi-page Page 1 contains table rows');
+
+    // Page 2 contains repeated table header
+    const mPage2 = multiStreams[1]?.[1] || '';
+    assert(mPage2.includes('OPERATIONAL DETAILS'), 'Multi-page Page 2 has repeated table header');
+    assert(mPage2.includes('Distribution Transformer'), 'Multi-page Page 2 continues table rows');
+
+    // Clean up created batch test events
+    await prisma.auditEvent.deleteMany({
+      where: { referenceId: { startsWith: 'PAGE-TEST-' } },
+    });
+
+    // Clean up test audit event
+    await prisma.auditEvent.delete({ where: { id: longAuditEvent.id } });
+
     console.log(`\nTests Completed: ${passed} passed, ${failed} failed.`);
     if (failed > 0) {
       process.exitCode = 1;

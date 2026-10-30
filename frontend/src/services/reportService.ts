@@ -64,6 +64,23 @@ export const reportService = {
     return res.data;
   },
 
+  async exportAuditXLSX(filters?: AuditFilterParams): Promise<Blob> {
+    const params: Record<string, any> = {};
+    if (filters?.search) params.search = filters.search;
+    if (filters?.startDate) params.startDate = filters.startDate;
+    if (filters?.endDate) params.endDate = filters.endDate;
+    if (filters?.departmentId && filters.departmentId !== 'ALL') params.departmentId = filters.departmentId;
+    if (filters?.actionType && filters.actionType !== 'ALL') params.actionType = filters.actionType;
+    if (filters?.category && filters.category !== 'ALL') params.category = filters.category;
+    if (filters?.userId && filters.userId !== 'ALL') params.userId = filters.userId;
+
+    const res = await api.get('/reports/audit/export/xlsx', {
+      params,
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+
   async exportAuditPDF(filters?: AuditFilterParams): Promise<Blob> {
     const params: Record<string, any> = {};
     if (filters?.search) params.search = filters.search;

@@ -3,7 +3,7 @@ import { AppRequest, AppResponse } from '../http/types';
 import { requireAuth } from '../auth/auth.middleware';
 import prisma from '../lib/prisma';
 import { queryAuditTrail, getResourceLifecycleHistory } from '../audit/audit.service';
-import { exportAuditTrailCSV, exportAuditTrailPDF, exportResourceLifecyclePDF } from './export.service';
+import { exportAuditTrailCSV, exportAuditTrailXLSX, exportAuditTrailPDF, exportResourceLifecyclePDF } from './export.service';
 
 const router = new Router();
 
@@ -578,6 +578,43 @@ router.get('/audit/export/csv', requireAuth, async (req: AppRequest, res: AppRes
     }
     console.error('[GET /api/reports/audit/export/csv Error]', err);
     return res.status(500).json({ success: false, message: 'Failed to generate audit CSV export' });
+  }
+});
+
+/**
+ * GET /api/reports/audit/export/xlsx
+ * Export filtered audit records to native Microsoft Excel (.xlsx) format
+ */
+router.get('/audit/export/xlsx', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const user = req.user!;
+    const result = await queryAuditTrail(user, { ...req.query, limit: 1000, page: 1 });
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const filename = `EEC_Audit_Trail_${dateStr}.xlsx`;
+
+    const xlsxBuffer = exportAuditTrailXLSX(result.events, {
+      generatedAt: now.toISOString(),
+      generatedBy: `${user.fullName} (${user.role})`,
+      scopeLabel: user.role === 'ADMIN' ? 'Corporation-wide' : user.role === 'DEPARTMENT_MANAGER' ? `Directorate: ${user.departmentId}` : user.role,
+      filtersApplied: req.query || {},
+    });
+
+    res.writeHead(200, {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': xlsxBuffer.length,
+    });
+    return res.end(xlsxBuffer);
+  } catch (err: any) {
+    if (err.message === 'FORBIDDEN_DEPARTMENT') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Cannot export audit records outside assigned directorate.',
+      });
+    }
+    console.error('[GET /api/reports/audit/export/xlsx Error]', err);
+    return res.status(500).json({ success: false, message: 'Failed to generate audit Excel export' });
   }
 });
 

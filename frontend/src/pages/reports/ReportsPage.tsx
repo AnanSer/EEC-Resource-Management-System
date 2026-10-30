@@ -129,7 +129,7 @@ export const ReportsPage: React.FC = () => {
   const auditLimit = 15;
 
   // Export Loading States
-  const [exportingCSV, setExportingCSV] = useState(false);
+  const [exportingXLSX, setExportingXLSX] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
   const [exportingLifecyclePDF, setExportingLifecyclePDF] = useState(false);
 
@@ -248,11 +248,11 @@ export const ReportsPage: React.FC = () => {
     fetchAuditTrail(1);
   };
 
-  // CSV Export Action
-  const handleExportCSV = async () => {
+  // Excel XLSX Export Action
+  const handleExportXLSX = async () => {
     try {
-      setExportingCSV(true);
-      const blob = await reportService.exportAuditCSV({
+      setExportingXLSX(true);
+      const blob = await reportService.exportAuditXLSX({
         search: auditSearch.trim() || undefined,
         startDate: auditStartDate || undefined,
         endDate: auditEndDate || undefined,
@@ -262,12 +262,12 @@ export const ReportsPage: React.FC = () => {
         userId: auditUser.trim() || undefined,
       });
       const dateStr = new Date().toISOString().slice(0, 10);
-      triggerFileDownload(blob, `EEC_Audit_Trail_${dateStr}.csv`);
+      triggerFileDownload(blob, `EEC_Audit_Trail_${dateStr}.xlsx`);
     } catch (err: any) {
-      console.error('Failed to export CSV', err);
-      alert(err.response?.data?.message || 'Failed to export CSV report');
+      console.error('Failed to export Excel XLSX', err);
+      alert(err.response?.data?.message || 'Failed to export Excel report');
     } finally {
-      setExportingCSV(false);
+      setExportingXLSX(false);
     }
   };
 
@@ -525,13 +525,13 @@ export const ReportsPage: React.FC = () => {
           {activeTab === 'audit' && (
             <div className="flex items-center gap-2">
               <button
-                onClick={handleExportCSV}
-                disabled={exportingCSV || auditLoading}
+                onClick={handleExportXLSX}
+                disabled={exportingXLSX || auditLoading}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold shadow-sm transition-all disabled:opacity-60"
-                title="Download filtered audit trail records as CSV"
+                title="Download filtered audit trail as formatted Microsoft Excel (.xlsx) workbook"
               >
-                <FileSpreadsheet className={`w-3.5 h-3.5 text-emerald-600 ${exportingCSV ? 'animate-spin' : ''}`} />
-                {exportingCSV ? 'Exporting CSV...' : 'Export CSV'}
+                <FileSpreadsheet className={`w-3.5 h-3.5 text-emerald-600 ${exportingXLSX ? 'animate-spin' : ''}`} />
+                {exportingXLSX ? 'Exporting Excel...' : 'Export Excel (.xlsx)'}
               </button>
               <button
                 onClick={handleExportPDF}
