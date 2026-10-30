@@ -116,7 +116,7 @@ router.get('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
     }
 
     const pageNum = Math.max(1, parseInt(page || '1', 10));
-    const limitNum = Math.max(1, Math.min(100, parseInt(limit || '50', 10)));
+    const limitNum = Math.max(1, Math.min(500, parseInt(limit || '100', 10)));
     const skip = (pageNum - 1) * limitNum;
 
     const [total, rawReqs] = await Promise.all([

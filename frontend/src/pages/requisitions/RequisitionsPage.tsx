@@ -18,6 +18,10 @@ import {
   Check, 
   Layers,
   Send,
+  Search,
+  X,
+  RotateCcw,
+  Clock,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -29,6 +33,63 @@ export const RequisitionsPage: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
+  const [urgencyFilter, setUrgencyFilter] = useState<string>('ALL');
+  const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
+
+  const handleResetFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('ALL');
+    setCategoryFilter('ALL');
+    setUrgencyFilter('ALL');
+    setDepartmentFilter('ALL');
+  };
+
+  const isFiltered = Boolean(
+    searchQuery.trim() ||
+    statusFilter !== 'ALL' ||
+    categoryFilter !== 'ALL' ||
+    urgencyFilter !== 'ALL' ||
+    departmentFilter !== 'ALL'
+  );
+
+  // KPI counts across all scoped requisitions
+  const kpis = {
+    total: requisitions.length,
+    pending: requisitions.filter(r => r.status === 'PENDING').length,
+    approved: requisitions.filter(r => r.status === 'APPROVED').length,
+    fulfilled: requisitions.filter(r => r.status === 'FULFILLED').length,
+    rejected: requisitions.filter(r => r.status === 'REJECTED' || r.status === 'CANCELLED').length,
+  };
+
+  // Filtered requisitions list
+  const filteredRequisitions = requisitions.filter((req) => {
+    if (statusFilter !== 'ALL' && req.status !== statusFilter) return false;
+    if (categoryFilter !== 'ALL' && req.category !== categoryFilter) return false;
+    if (urgencyFilter !== 'ALL' && req.urgency !== urgencyFilter) return false;
+    if (departmentFilter !== 'ALL' && req.departmentId !== departmentFilter) return false;
+
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+
+    return (
+      (req.requisitionNumber && req.requisitionNumber.toLowerCase().includes(q)) ||
+      (req.itemDescription && req.itemDescription.toLowerCase().includes(q)) ||
+      (req.justification && req.justification.toLowerCase().includes(q)) ||
+      (req.requesterName && req.requesterName.toLowerCase().includes(q)) ||
+      (req.employeeName && req.employeeName.toLowerCase().includes(q)) ||
+      (req.departmentName && req.departmentName.toLowerCase().includes(q)) ||
+      (req.fulfilledResourceName && req.fulfilledResourceName.toLowerCase().includes(q)) ||
+      (req.fulfilledResourceCode && req.fulfilledResourceCode.toLowerCase().includes(q)) ||
+      (req.approvalComments && req.approvalComments.toLowerCase().includes(q)) ||
+      (req.rejectionReason && req.rejectionReason.toLowerCase().includes(q)) ||
+      (req.handoverNotes && req.handoverNotes.toLowerCase().includes(q))
+    );
+  });
 
   // New Requisition Modal
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
@@ -73,7 +134,7 @@ export const RequisitionsPage: React.FC = () => {
     setLoading(true);
     try {
       const [reqs, res, depts, emps] = await Promise.all([
-        requisitionService.getAll(),
+        requisitionService.getAll({ limit: 200 }),
         resourceService.getAll(),
         departmentService.getAll().catch(() => []),
         employeeService.getAll().catch(() => []),
@@ -262,8 +323,307 @@ export const RequisitionsPage: React.FC = () => {
           </span>
         </div>
         <div className="text-slate-400 font-mono text-[11px]">
-          {requisitions.length} Total Requests
+          {isFiltered ? `Showing ${filteredRequisitions.length} of ${requisitions.length}` : `${requisitions.length} Total Requests`}
         </div>
+      </div>
+
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter('ALL')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'ALL'
+              ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-900/10'
+              : 'bg-white text-slate-900 border-slate-200/80 hover:border-slate-300 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${statusFilter === 'ALL' ? 'text-slate-300' : 'text-slate-500'}`}>
+              Total Requests
+            </span>
+            <Layers className={`w-4 h-4 ${statusFilter === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`} />
+          </div>
+          <div className="text-2xl font-black">{kpis.total}</div>
+          <div className={`text-[10px] mt-1 ${statusFilter === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`}>
+            Corporation-wide requisitions
+          </div>
+        </button>
+
+        {/* Pending */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'PENDING' ? 'ALL' : 'PENDING')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'PENDING'
+              ? 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-500/20'
+              : 'bg-white text-slate-900 border-slate-200/80 hover:border-amber-300 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${statusFilter === 'PENDING' ? 'text-amber-100' : 'text-amber-700'}`}>
+              Pending Review
+            </span>
+            <Clock className={`w-4 h-4 ${statusFilter === 'PENDING' ? 'text-amber-100' : 'text-amber-500'}`} />
+          </div>
+          <div className={`text-2xl font-black ${statusFilter === 'PENDING' ? 'text-white' : 'text-amber-600'}`}>{kpis.pending}</div>
+          <div className={`text-[10px] mt-1 ${statusFilter === 'PENDING' ? 'text-amber-100' : 'text-slate-400'}`}>
+            {currentRole === 'ADMIN' ? 'Awaiting your approval' : 'In review queue'}
+          </div>
+        </button>
+
+        {/* Approved */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'APPROVED' ? 'ALL' : 'APPROVED')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'APPROVED'
+              ? 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-600/20'
+              : 'bg-white text-slate-900 border-slate-200/80 hover:border-emerald-300 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${statusFilter === 'APPROVED' ? 'text-emerald-100' : 'text-emerald-700'}`}>
+              Approved Handover
+            </span>
+            <CheckCircle2 className={`w-4 h-4 ${statusFilter === 'APPROVED' ? 'text-emerald-100' : 'text-emerald-600'}`} />
+          </div>
+          <div className={`text-2xl font-black ${statusFilter === 'APPROVED' ? 'text-white' : 'text-emerald-600'}`}>{kpis.approved}</div>
+          <div className={`text-[10px] mt-1 ${statusFilter === 'APPROVED' ? 'text-emerald-100' : 'text-slate-400'}`}>
+            {currentRole === 'STORE_KEEPER' ? 'Ready for warehouse dispatch' : 'Awaiting physical issue'}
+          </div>
+        </button>
+
+        {/* Fulfilled */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'FULFILLED' ? 'ALL' : 'FULFILLED')}
+          className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+            statusFilter === 'FULFILLED'
+              ? 'bg-sky-600 text-white border-sky-700 shadow-md ring-2 ring-sky-600/20'
+              : 'bg-white text-slate-900 border-slate-200/80 hover:border-sky-300 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <span className={`text-[11px] font-bold uppercase tracking-wider ${statusFilter === 'FULFILLED' ? 'text-sky-100' : 'text-sky-700'}`}>
+              Fulfilled Assets
+            </span>
+            <PackageCheck className={`w-4 h-4 ${statusFilter === 'FULFILLED' ? 'text-sky-100' : 'text-sky-600'}`} />
+          </div>
+          <div className={`text-2xl font-black ${statusFilter === 'FULFILLED' ? 'text-white' : 'text-sky-600'}`}>{kpis.fulfilled}</div>
+          <div className={`text-[10px] mt-1 ${statusFilter === 'FULFILLED' ? 'text-sky-100' : 'text-slate-400'}`}>
+            Active field deployment
+          </div>
+        </button>
+      </div>
+
+      {/* Search & Filter Toolbar */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm space-y-3.5">
+        {/* Row 1: Search and Quick Status Tabs */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by requisition #, description, justification, requester, employee..."
+              className="w-full pl-10 pr-9 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-eec-primary/20 focus:border-eec-primary text-slate-800 placeholder:text-slate-400 transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-200 transition-colors"
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Status Filter Tabs */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl overflow-x-auto scrollbar-none">
+            {[
+              { id: 'ALL', label: 'All', count: kpis.total },
+              { id: 'PENDING', label: 'Pending', count: kpis.pending },
+              { id: 'APPROVED', label: 'Approved', count: kpis.approved },
+              { id: 'FULFILLED', label: 'Fulfilled', count: kpis.fulfilled },
+              { id: 'REJECTED', label: 'Rejected', count: kpis.rejected },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  statusFilter === tab.id
+                    ? 'bg-white text-eec-primary shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  statusFilter === tab.id
+                    ? 'bg-eec-primary/10 text-eec-primary'
+                    : 'bg-slate-200 text-slate-600'
+                }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Row 2: Secondary Dropdowns and Reset */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Category Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Category:</span>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-eec-primary/20"
+              >
+                <option value="ALL">All Categories</option>
+                <option value="IT_EQUIPMENT">IT Equipment</option>
+                <option value="VEHICLES">Vehicles & Transport</option>
+                <option value="HEAVY_MACHINERY">Heavy Machinery</option>
+                <option value="SURVEYING_GEOTECHNICAL">Surveying & Geotechnical</option>
+                <option value="CAMP_FACILITY_FURNITURE">Furniture & Facilities</option>
+              </select>
+            </div>
+
+            {/* Urgency Filter */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-slate-500 uppercase">Urgency:</span>
+              <select
+                value={urgencyFilter}
+                onChange={(e) => setUrgencyFilter(e.target.value)}
+                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-eec-primary/20"
+              >
+                <option value="ALL">All Urgencies</option>
+                <option value="ROUTINE">Routine</option>
+                <option value="URGENT">Urgent</option>
+                <option value="EMERGENCY_PROJECT">Emergency Project</option>
+              </select>
+            </div>
+
+            {/* Department Filter (Admin / Store Keeper / All) */}
+            {departments.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Directorate:</span>
+                <select
+                  value={departmentFilter}
+                  onChange={(e) => setDepartmentFilter(e.target.value)}
+                  className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-eec-primary/20 max-w-[200px] truncate"
+                >
+                  <option value="ALL">All Directorates</option>
+                  {departments.map((dept) => (
+                    <option key={dept.id} value={dept.id}>
+                      {dept.name} ({dept.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Reset Filters Button */}
+            {isFiltered && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                title="Reset all search and filters"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                <span>Reset Filters</span>
+              </button>
+            )}
+          </div>
+
+          {/* Showing Count */}
+          <div className="text-xs text-slate-500 font-medium">
+            Showing <strong className="text-slate-800">{filteredRequisitions.length}</strong> of {requisitions.length} requisitions
+            {isFiltered && <span className="ml-1 text-eec-primary font-bold">(filtered)</span>}
+          </div>
+        </div>
+
+        {/* Active Filter Chips */}
+        {isFiltered && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
+            <span className="text-[11px] font-bold text-slate-400 uppercase">Active Filters:</span>
+            {searchQuery.trim() && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg font-medium">
+                Search: "{searchQuery}"
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="hover:text-rose-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {statusFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg font-medium">
+                Status: {statusFilter}
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('ALL')}
+                  className="hover:text-rose-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {categoryFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg font-medium">
+                Category: {categoryFilter.replace(/_/g, ' ')}
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('ALL')}
+                  className="hover:text-rose-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {urgencyFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-purple-50 text-purple-800 border border-purple-200 rounded-lg font-medium">
+                Urgency: {urgencyFilter.replace(/_/g, ' ')}
+                <button
+                  type="button"
+                  onClick={() => setUrgencyFilter('ALL')}
+                  className="hover:text-rose-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {departmentFilter !== 'ALL' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg font-medium">
+                Directorate: {departments.find(d => d.id === departmentFilter)?.name || departmentFilter}
+                <button
+                  type="button"
+                  onClick={() => setDepartmentFilter('ALL')}
+                  className="hover:text-rose-600 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="text-xs text-eec-primary hover:underline font-bold ml-1 cursor-pointer"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Requisitions List */}
@@ -279,9 +639,25 @@ export const RequisitionsPage: React.FC = () => {
             No equipment requisitions have been recorded yet. Click the button above to request assets for your projects.
           </p>
         </div>
+      ) : filteredRequisitions.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center">
+          <Search className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+          <h3 className="text-base font-bold text-slate-800">No Matching Requisitions</h3>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+            No requisitions match your current search query or active filter settings. Try adjusting your filters or resetting them.
+          </p>
+          <button
+            type="button"
+            onClick={handleResetFilters}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+          >
+            <RotateCcw className="w-4 h-4 text-slate-500" />
+            Reset All Filters
+          </button>
+        </div>
       ) : (
         <div className="space-y-4">
-          {requisitions.map((req) => (
+          {filteredRequisitions.map((req) => (
             <div
               key={req.id}
               className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:border-slate-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
