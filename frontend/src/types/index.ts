@@ -528,3 +528,71 @@ export interface ReportOverviewData {
   };
   recentActivities: RecentActivityItem[];
 }
+
+export interface AuditEventItem {
+  id: string;
+  actionType: string;
+  resourceId: string | null;
+  resourceName: string | null;
+  resourceCode: string | null;
+  resourceCategory: string | null;
+  departmentId: string | null;
+  departmentName?: string | null;
+  actorId: string | null;
+  actorName: string;
+  actorRole: string;
+  referenceId: string | null;
+  details: string | null;
+  timestamp: string;
+  department?: { id: string; name: string; code: string } | null;
+}
+
+export interface AuditFilterParams {
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  departmentId?: string;
+  actionType?: string;
+  category?: string;
+  userId?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface AuditTrailResponse {
+  success: boolean;
+  events: AuditEventItem[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
+export interface LifecycleResourceInfo {
+  id: string;
+  itemCode: string;
+  name: string;
+  category: string;
+  subcategory?: string;
+  status: string;
+  condition: string;
+  location?: string;
+  departmentId: string;
+  departmentName?: string;
+  departmentCode?: string;
+  currentAssigneeId?: string | null;
+  currentAssigneeName?: string | null;
+  purchaseDate?: string | null;
+  purchaseCostETB: number;
+  currentValueETB: number;
+  createdAt: string;
+}
+
+export interface ResourceLifecycleResponse {
+  success: boolean;
+  resource: LifecycleResourceInfo;
+  events: AuditEventItem[];
+}
+

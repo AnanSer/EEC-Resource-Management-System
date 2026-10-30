@@ -2,6 +2,7 @@ import { Router } from '../http/router';
 import { AppRequest, AppResponse } from '../http/types';
 import { requireAuth } from '../auth/auth.middleware';
 import prisma from '../lib/prisma';
+import { recordAuditEvent } from '../audit/audit.service';
 
 const router = new Router();
 
@@ -613,6 +614,19 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       },
     });
 
+    await recordAuditEvent(prisma, {
+      actionType: 'RESOURCE_REGISTERED',
+      resourceId: created.id,
+      resourceName: created.name,
+      resourceCode: created.itemCode,
+      resourceCategory: created.category,
+      departmentId: created.departmentId,
+      actorId: req.user!.id,
+      actorName: req.user!.fullName,
+      actorRole: userRole,
+      referenceId: created.itemCode,
+      details: `Resource ${created.name} (${created.itemCode}) registered in ${created.department?.name || 'department'}`,
+    });
 
     return res.status(201).json({
       success: true,
@@ -773,6 +787,29 @@ router.put('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
       },
     });
 
+    let updateAction = 'RESOURCE_UPDATED';
+    if (status !== undefined && status !== existing.status) {
+      if (status === 'RETIRED') updateAction = 'RESOURCE_RETIRED';
+      else if (status === 'DISPOSED') updateAction = 'RESOURCE_DISPOSED';
+      else updateAction = 'RESOURCE_STATUS_CHANGED';
+    } else if (condition !== undefined && condition !== existing.condition) {
+      updateAction = 'CONDITION_CHANGED';
+    }
+
+    await recordAuditEvent(prisma, {
+      actionType: updateAction,
+      resourceId: updated.id,
+      resourceName: updated.name,
+      resourceCode: updated.itemCode,
+      resourceCategory: updated.category,
+      departmentId: updated.departmentId,
+      actorId: req.user!.id,
+      actorName: req.user!.fullName,
+      actorRole: userRole,
+      referenceId: updated.itemCode,
+      details: `Resource ${updated.name} (${updated.itemCode}) updated: ${updateAction.replace(/_/g, ' ')}`,
+    });
+
     return res.status(200).json({
       success: true,
       message: 'Resource updated successfully',
@@ -823,6 +860,20 @@ router.delete('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => 
     }
 
     await prisma.resource.delete({ where: { id: existing.id } });
+
+    await recordAuditEvent(prisma, {
+      actionType: 'RESOURCE_DELETED',
+      resourceId: existing.id,
+      resourceName: existing.name,
+      resourceCode: existing.itemCode,
+      resourceCategory: existing.category,
+      departmentId: existing.departmentId,
+      actorId: req.user!.id,
+      actorName: req.user!.fullName,
+      actorRole: userRole,
+      referenceId: existing.itemCode,
+      details: `Resource ${existing.name} (${existing.itemCode}) permanently deleted from registry`,
+    });
 
     return res.status(200).json({
       success: true,

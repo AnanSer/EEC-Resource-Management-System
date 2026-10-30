@@ -38,6 +38,7 @@ model Department {
   transfersTo   CustodyTransfer[] @relation("TransfersToDept")
   requisitions  ResourceRequisition[]
   maintenanceRequests MaintenanceRequest[]
+  auditEvents AuditEvent[]
 
   @@map("departments")
 }
@@ -132,6 +133,7 @@ model Resource {
   requisitions        ResourceRequisition[]
   maintenanceRequests MaintenanceRequest[]
   maintenanceInspections MaintenanceInspection[]
+  auditEvents         AuditEvent[]
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
 
@@ -344,4 +346,33 @@ model MaintenanceInspection {
   @@index([maintenanceRequestId])
   @@index([resourceId])
   @@map("maintenance_inspections")
+}
+
+// Centralized Audit Event Model for Resource Lifecycle & Operational Governance
+model AuditEvent {
+  id                String      @id @default(uuid())
+  actionType        String      // RESOURCE_REGISTERED, RESOURCE_UPDATED, CONDITION_CHANGED, STATUS_CHANGED, ASSIGNED, TRANSFERRED, RETURNED, MAINTENANCE_SUBMITTED, MAINTENANCE_APPROVED, MAINTENANCE_REJECTED, MAINTENANCE_PROGRESS, MAINTENANCE_ON_HOLD, MAINTENANCE_RESUMED, MAINTENANCE_COMPLETED, INSPECTION_RECORDED, RETIRED, DISPOSED
+  resourceId        String?
+  resource          Resource?   @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  resourceName      String?
+  resourceCode      String?
+  resourceCategory  String?
+  departmentId      String?
+  department        Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  actorId           String?
+  actorName         String
+  actorRole         String
+  referenceId       String?     // itemCode, assignmentNumber, transferNumber, requestNumber, etc.
+  details           String?     // Human-readable summary of the action and parameters
+  metadata          Json?       // Structured metadata / change details
+  timestamp         DateTime    @default(now())
+  createdAt         DateTime    @default(now())
+
+  @@index([resourceId])
+  @@index([departmentId])
+  @@index([actorId])
+  @@index([actionType])
+  @@index([timestamp])
+  @@index([referenceId])
+  @@map("audit_events")
 }

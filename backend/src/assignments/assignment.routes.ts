@@ -693,6 +693,23 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
         },
       });
 
+      await tx.auditEvent.create({
+        data: {
+          actionType: 'RESOURCE_ASSIGNED',
+          resourceId: resource.id,
+          resourceName: resource.name,
+          resourceCode: resource.itemCode,
+          resourceCategory: resource.category,
+          departmentId: assignmentDeptId,
+          actorId: user.id,
+          actorName: user.fullName,
+          actorRole: user.role,
+          referenceId: assignmentNumber,
+          details: `Assigned to ${employee.name} (${employee.employeeId}) for purpose: ${purpose}`,
+          timestamp: now,
+        },
+      });
+
       return { newAssignment, updatedResource };
     });
 
@@ -941,6 +958,23 @@ router.post('/transfer', requireAuth, async (req: AppRequest, res: AppResponse) 
         },
       });
 
+      await tx.auditEvent.create({
+        data: {
+          actionType: 'CUSTODY_TRANSFERRED',
+          resourceId: resource.id,
+          resourceName: resource.name,
+          resourceCode: resource.itemCode,
+          resourceCategory: resource.category,
+          departmentId: targetDeptId,
+          actorId: user.id,
+          actorName: user.fullName || user.email,
+          actorRole: userRole,
+          referenceId: transferNumber,
+          details: `Custody transferred from ${currentAssignment.employee.name} to ${toEmployee.name}. Reason: ${reason || 'Field re-allocation'}`,
+          timestamp: now,
+        },
+      });
+
       return { newAssignment, transferRecord, updatedResource };
     });
 
@@ -1177,6 +1211,23 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
         },
         include: {
           department: true,
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          actionType: 'RESOURCE_RETURNED',
+          resourceId: targetResource.id,
+          resourceName: targetResource.name,
+          resourceCode: targetResource.itemCode,
+          resourceCategory: targetResource.category,
+          departmentId: targetResource.departmentId,
+          actorId: user.id,
+          actorName: user.fullName || user.email,
+          actorRole: userRole,
+          referenceId: currentAssignment.assignmentNumber,
+          details: `Custody returned from ${currentAssignment.employee.name}. Return condition: ${finalCondition}. Resource status: ${newStatus}`,
+          timestamp: now,
         },
       });
 

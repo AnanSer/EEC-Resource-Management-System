@@ -285,6 +285,104 @@ async function runTests() {
     assert(Array.isArray(emptyData?.distribution?.byCategory) && emptyData.distribution.byCategory.length === 0, 'Empty category distribution is empty array');
     assert(Array.isArray(emptyData?.recentActivities), 'Empty recent activities is empty array');
 
+    // 9. Phase 2: Detailed Audit Trail Exploration & Search
+    console.log('\n--- 9. Detailed Audit Trail Exploration & Role Boundaries ---');
+    const auditRes = await request('GET', '/api/reports/audit?page=1&limit=10', { cookie: adminCookie });
+    assert(auditRes.status === 200, 'Admin can fetch audit trail (200)');
+    assert(Array.isArray(auditRes.body?.events), 'Audit response contains events array');
+    assert(auditRes.body?.pagination?.total >= 1, 'Audit records exist in database');
+    assert(auditRes.body?.pagination?.page === 1, 'Pagination page is 1');
+    assert(auditRes.body?.pagination?.limit === 10, 'Pagination limit is 10');
+
+    // Filter by actionType
+    const actionAuditRes = await request('GET', '/api/reports/audit?actionType=RESOURCE_REGISTERED', { cookie: adminCookie });
+    assert(actionAuditRes.status === 200, 'Filter audit by actionType returns 200');
+    const allRegistered = (actionAuditRes.body?.events || []).every((e: any) => e.actionType === 'RESOURCE_REGISTERED');
+    assert(allRegistered, 'All filtered events match RESOURCE_REGISTERED');
+
+    // Search by keyword
+    const searchAuditRes = await request('GET', '/api/reports/audit?search=EEC', { cookie: adminCookie });
+    assert(searchAuditRes.status === 200, 'Search audit by keyword returns 200');
+
+    // Department boundary check for audit
+    const mgrAuditRes = await request('GET', '/api/reports/audit', { cookie: managerCookie });
+    assert(mgrAuditRes.status === 200, 'Department Manager can query audit trail (200)');
+    const mgrEvents = mgrAuditRes.body?.events || [];
+    const allInDept = mgrEvents.every((e: any) => !e.departmentId || e.departmentId === 'dept-101');
+    assert(allInDept, 'Manager sees only events within assigned department (dept-101)');
+
+    const mgrForeignAuditRes = await request('GET', '/api/reports/audit?departmentId=dept-102', { cookie: managerCookie });
+    assert(mgrForeignAuditRes.status === 403, 'Manager blocked with 403 when requesting foreign department audit');
+
+    // Employee boundary check
+    const empAuditRes = await request('GET', '/api/reports/audit', { cookie: employeeCookie });
+    assert(empAuditRes.status === 200, 'Employee can query audit trail (200)');
+
+    // 10. Phase 2: Audit Exports (CSV and PDF)
+    console.log('\n--- 10. Audit Exports (CSV & PDF) ---');
+    const csvRes = await request('GET', '/api/reports/audit/export/csv', { cookie: adminCookie });
+    assert(csvRes.status === 200, 'Admin can export audit trail to CSV (200)');
+    const contentType = csvRes.headers['content-type'] || '';
+    assert(contentType.includes('text/csv'), 'CSV Content-Type is text/csv');
+    const disposition = csvRes.headers['content-disposition'] || '';
+    assert(disposition.includes('attachment; filename='), 'Content-Disposition specifies attachment filename');
+    assert(typeof csvRes.body === 'string' && csvRes.body.includes('Action Type') && csvRes.body.includes('Reference ID'), 'CSV contains header columns');
+
+    const pdfRes = await request('GET', '/api/reports/audit/export/pdf', { cookie: adminCookie });
+    assert(pdfRes.status === 200, 'Admin can export audit trail to PDF (200)');
+    const pdfContentType = pdfRes.headers['content-type'] || '';
+    assert(pdfContentType.includes('application/pdf'), 'PDF Content-Type is application/pdf');
+    const pdfDisposition = pdfRes.headers['content-disposition'] || '';
+    assert(pdfDisposition.includes('attachment; filename='), 'PDF Content-Disposition specifies attachment filename');
+    // Check raw binary output starts with %PDF-1.4
+    const pdfRaw = typeof pdfRes.body === 'string' ? pdfRes.body : '';
+    assert(pdfRaw.startsWith('%PDF-1.4'), 'Generated PDF begins with %PDF-1.4 magic bytes');
+
+    // Manager export foreign department blocked with 403
+    const mgrExportForeignRes = await request('GET', '/api/reports/audit/export/csv?departmentId=dept-102', { cookie: managerCookie });
+    assert(mgrExportForeignRes.status === 403, 'Manager blocked with 403 from exporting foreign department CSV');
+
+    // 11. Phase 2: Resource Lifecycle History & Dossier PDF Export
+    console.log('\n--- 11. Resource Lifecycle History & Dossier PDF Export ---');
+    // Find an existing resource in dept-101 and one in another department
+    const dept101Resource = await prisma.resource.findFirst({
+      where: { departmentId: 'dept-101' },
+      include: { currentAssignee: true },
+    });
+    const dept102Resource = await prisma.resource.findFirst({
+      where: { departmentId: 'dept-102' },
+    });
+
+    if (dept101Resource) {
+      // Admin query lifecycle
+      const adminLifecycleRes = await request('GET', `/api/reports/lifecycle/${dept101Resource.id}`, { cookie: adminCookie });
+      assert(adminLifecycleRes.status === 200, 'Admin can fetch resource lifecycle history (200)');
+      assert(adminLifecycleRes.body?.resource?.itemCode === dept101Resource.itemCode, 'Lifecycle resource details match item code');
+      assert(Array.isArray(adminLifecycleRes.body?.events), 'Lifecycle events is array');
+      assert(adminLifecycleRes.body?.events.length >= 1, 'Lifecycle contains at least 1 chronological event');
+
+      // Department Manager query lifecycle for own department resource
+      const mgrLifecycleRes = await request('GET', `/api/reports/lifecycle/${dept101Resource.id}`, { cookie: managerCookie });
+      assert(mgrLifecycleRes.status === 200, 'Manager can fetch lifecycle for own department resource (200)');
+
+      // Admin export lifecycle dossier as PDF
+      const dossierPdfRes = await request('GET', `/api/reports/lifecycle/${dept101Resource.id}/export/pdf`, { cookie: adminCookie });
+      assert(dossierPdfRes.status === 200, 'Admin can export lifecycle dossier as PDF (200)');
+      assert((dossierPdfRes.headers['content-type'] || '').includes('application/pdf'), 'Lifecycle PDF has application/pdf Content-Type');
+      const dossierRaw = typeof dossierPdfRes.body === 'string' ? dossierPdfRes.body : '';
+      assert(dossierRaw.startsWith('%PDF-1.4'), 'Lifecycle PDF begins with %PDF-1.4');
+    }
+
+    if (dept102Resource) {
+      // Department Manager query foreign department resource lifecycle -> 403
+      const mgrForeignLifecycleRes = await request('GET', `/api/reports/lifecycle/${dept102Resource.id}`, { cookie: managerCookie });
+      assert(mgrForeignLifecycleRes.status === 403, 'Manager blocked with 403 from foreign department resource lifecycle');
+
+      // Employee query resource they never held -> 403
+      const empForeignLifecycleRes = await request('GET', `/api/reports/lifecycle/${dept102Resource.id}`, { cookie: employeeCookie });
+      assert(empForeignLifecycleRes.status === 403, 'Employee blocked with 403 on resource with no custody history');
+    }
+
     console.log(`\nTests Completed: ${passed} passed, ${failed} failed.`);
     if (failed > 0) {
       process.exitCode = 1;

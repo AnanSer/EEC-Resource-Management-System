@@ -2,6 +2,8 @@ import { Router } from '../http/router';
 import { AppRequest, AppResponse } from '../http/types';
 import { requireAuth } from '../auth/auth.middleware';
 import prisma from '../lib/prisma';
+import { queryAuditTrail, getResourceLifecycleHistory } from '../audit/audit.service';
+import { exportAuditTrailCSV, exportAuditTrailPDF, exportResourceLifecyclePDF } from './export.service';
 
 const router = new Router();
 
@@ -511,6 +513,169 @@ router.get('/overview', requireAuth, async (req: AppRequest, res: AppResponse) =
       success: false,
       message: 'Failed to generate reports overview',
     });
+  }
+});
+
+/**
+ * GET /api/reports/audit
+ * Query detailed operational audit trail with pagination, search, and filters
+ */
+router.get('/audit', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const user = req.user!;
+    const result = await queryAuditTrail(user, req.query || {});
+    return res.status(200).json({
+      success: true,
+      events: result.events,
+      pagination: result.pagination,
+    });
+  } catch (err: any) {
+    if (err.message === 'FORBIDDEN_DEPARTMENT') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Department managers may only view audit records for their assigned directorate.',
+      });
+    }
+    console.error('[GET /api/reports/audit Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve audit trail records',
+    });
+  }
+});
+
+/**
+ * GET /api/reports/audit/export/csv
+ * Export filtered audit records to CSV
+ */
+router.get('/audit/export/csv', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const user = req.user!;
+    const result = await queryAuditTrail(user, { ...req.query, limit: 1000, page: 1 });
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const filename = `EEC_Audit_Trail_${dateStr}.csv`;
+
+    const csvContent = exportAuditTrailCSV(result.events, {
+      generatedAt: now.toISOString(),
+      generatedBy: `${user.fullName} (${user.role})`,
+      scopeLabel: user.role === 'ADMIN' ? 'Corporation-wide' : user.role === 'DEPARTMENT_MANAGER' ? `Directorate: ${user.departmentId}` : user.role,
+      filtersApplied: req.query || {},
+    });
+
+    res.writeHead(200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': Buffer.byteLength(csvContent, 'utf-8'),
+    });
+    return res.end(csvContent);
+  } catch (err: any) {
+    if (err.message === 'FORBIDDEN_DEPARTMENT') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Cannot export audit records outside assigned directorate.',
+      });
+    }
+    console.error('[GET /api/reports/audit/export/csv Error]', err);
+    return res.status(500).json({ success: false, message: 'Failed to generate audit CSV export' });
+  }
+});
+
+/**
+ * GET /api/reports/audit/export/pdf
+ * Export filtered audit records to PDF
+ */
+router.get('/audit/export/pdf', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const user = req.user!;
+    const result = await queryAuditTrail(user, { ...req.query, limit: 500, page: 1 });
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const filename = `EEC_Audit_Trail_${dateStr}.pdf`;
+
+    const pdfBuffer = exportAuditTrailPDF(result.events, {
+      generatedAt: now.toISOString(),
+      generatedBy: `${user.fullName} (${user.role})`,
+      scopeLabel: user.role === 'ADMIN' ? 'Corporation-wide' : user.role === 'DEPARTMENT_MANAGER' ? `Directorate: ${user.departmentId}` : user.role,
+      filtersApplied: req.query || {},
+    });
+
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    return res.end(pdfBuffer);
+  } catch (err: any) {
+    if (err.message === 'FORBIDDEN_DEPARTMENT') {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Cannot export audit records outside assigned directorate.',
+      });
+    }
+    console.error('[GET /api/reports/audit/export/pdf Error]', err);
+    return res.status(500).json({ success: false, message: 'Failed to generate audit PDF export' });
+  }
+});
+
+/**
+ * GET /api/reports/lifecycle/:id
+ * Retrieve complete chronological lifecycle history for a resource
+ */
+router.get('/lifecycle/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const user = req.user!;
+    const resourceIdOrCode = req.params!.id;
+    const result = await getResourceLifecycleHistory(user, resourceIdOrCode);
+    return res.status(200).json({
+      success: true,
+      resource: result.resource,
+      events: result.events,
+    });
+  } catch (err: any) {
+    if (err.message === 'RESOURCE_NOT_FOUND') {
+      return res.status(404).json({ success: false, message: `Resource '${req.params!.id}' not found` });
+    }
+    if (err.message === 'FORBIDDEN') {
+      return res.status(403).json({ success: false, message: 'Forbidden: You do not have permission to view lifecycle history for this resource.' });
+    }
+    console.error('[GET /api/reports/lifecycle/:id Error]', err);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve resource lifecycle history' });
+  }
+});
+
+/**
+ * GET /api/reports/lifecycle/:id/export/pdf
+ * Export a resource's complete lifecycle history dossier to PDF
+ */
+router.get('/lifecycle/:id/export/pdf', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const user = req.user!;
+    const resourceIdOrCode = req.params!.id;
+    const result = await getResourceLifecycleHistory(user, resourceIdOrCode);
+    const now = new Date();
+    const filename = `EEC_Lifecycle_${result.resource.itemCode}_${now.toISOString().slice(0, 10)}.pdf`;
+
+    const pdfBuffer = exportResourceLifecyclePDF(result.resource, result.events, {
+      generatedAt: now.toISOString(),
+      generatedBy: `${user.fullName} (${user.role})`,
+    });
+
+    res.writeHead(200, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    return res.end(pdfBuffer);
+  } catch (err: any) {
+    if (err.message === 'RESOURCE_NOT_FOUND') {
+      return res.status(404).json({ success: false, message: `Resource '${req.params!.id}' not found` });
+    }
+    if (err.message === 'FORBIDDEN') {
+      return res.status(403).json({ success: false, message: 'Forbidden: You do not have permission to export lifecycle dossier for this resource.' });
+    }
+    console.error('[GET /api/reports/lifecycle/:id/export/pdf Error]', err);
+    return res.status(500).json({ success: false, message: 'Failed to generate resource lifecycle PDF' });
   }
 });
 

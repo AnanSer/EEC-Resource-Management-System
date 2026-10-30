@@ -2,6 +2,7 @@ import { Router } from '../http/router';
 import { AppRequest, AppResponse } from '../http/types';
 import { requireAuth } from '../auth/auth.middleware';
 import prisma from '../lib/prisma';
+import { recordAuditEvent } from '../audit/audit.service';
 
 const router = new Router();
 
@@ -620,6 +621,20 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
         },
       });
 
+      await recordAuditEvent(tx, {
+        actionType: 'MAINTENANCE_SUBMITTED',
+        resourceId: resource.id,
+        resourceName: resource.name,
+        resourceCode: resource.itemCode,
+        resourceCategory: resource.category,
+        departmentId: resource.departmentId,
+        actorId: user.id,
+        actorName: user.fullName,
+        actorRole: userRole,
+        referenceId: newRequest.requestNumber,
+        details: `Maintenance defect reported: ${title.trim()} (Priority: ${priority || 'MEDIUM'})`,
+      });
+
       return { newRequest, updatedResource };
     });
 
@@ -748,6 +763,20 @@ router.post('/:id/review', requireAuth, async (req: AppRequest, res: AppResponse
           },
         });
 
+        await recordAuditEvent(tx, {
+          actionType: 'MAINTENANCE_APPROVED',
+          resourceId: requestRecord.resourceId,
+          resourceName: requestRecord.resource.name,
+          resourceCode: requestRecord.resource.itemCode,
+          resourceCategory: requestRecord.resource.category,
+          departmentId: requestRecord.departmentId,
+          actorId: user.id,
+          actorName: user.fullName,
+          actorRole: userRole,
+          referenceId: requestRecord.requestNumber,
+          details: `Maintenance request ${requestRecord.requestNumber} approved for servicing: ${comments ? comments.trim() : 'Approved'}`,
+        });
+
         return { updatedRequest, resourceStatus: updatedResourceStatus };
       } else {
         // REJECT action: Restore resource status safely
@@ -787,6 +816,20 @@ router.post('/:id/review', requireAuth, async (req: AppRequest, res: AppResponse
             actorRole: userRole,
             notes: rejectionReason.trim(),
           },
+        });
+
+        await recordAuditEvent(tx, {
+          actionType: 'MAINTENANCE_REJECTED',
+          resourceId: requestRecord.resourceId,
+          resourceName: requestRecord.resource.name,
+          resourceCode: requestRecord.resource.itemCode,
+          resourceCategory: requestRecord.resource.category,
+          departmentId: requestRecord.departmentId,
+          actorId: user.id,
+          actorName: user.fullName,
+          actorRole: userRole,
+          referenceId: requestRecord.requestNumber,
+          details: `Maintenance request ${requestRecord.requestNumber} rejected: ${rejectionReason.trim()}`,
         });
 
         return { updatedRequest, resourceStatus: safeRestoreStatus };
@@ -1018,6 +1061,31 @@ router.put('/:id/progress', requireAuth, async (req: AppRequest, res: AppRespons
         },
       });
 
+      let auditAction = 'MAINTENANCE_PROGRESS';
+      if (targetStatus === 'IN_PROGRESS' && currentStatus !== 'IN_PROGRESS') {
+        auditAction = 'MAINTENANCE_STARTED';
+      } else if (targetStatus === 'ON_HOLD') {
+        auditAction = 'MAINTENANCE_ON_HOLD';
+      } else if (targetStatus === 'COMPLETED') {
+        auditAction = 'MAINTENANCE_COMPLETED';
+      } else if (currentStatus === 'ON_HOLD' && targetStatus === 'IN_PROGRESS') {
+        auditAction = 'MAINTENANCE_RESUMED';
+      }
+
+      await recordAuditEvent(tx, {
+        actionType: auditAction,
+        resourceId: requestRecord.resourceId,
+        resourceName: requestRecord.resource.name,
+        resourceCode: requestRecord.resource.itemCode,
+        resourceCategory: requestRecord.resource.category,
+        departmentId: requestRecord.departmentId,
+        actorId: user.id,
+        actorName: user.fullName,
+        actorRole: userRole,
+        referenceId: requestRecord.requestNumber,
+        details: `Work order ${requestRecord.requestNumber} updated to ${targetStatus}: ${notes || resolutionNotes || diagnosis || 'Servicing progress updated'}${actualCostETB ? ` (Cost: ${actualCostETB} ETB)` : ''}`,
+      });
+
       return { updatedRequest, custodyActionTaken };
     });
 
@@ -1112,6 +1180,17 @@ router.post('/:id/inspections', requireAuth, async (req: AppRequest, res: AppRes
         actorRole: userRole,
         notes: `QA Inspection (${inspectionType}): ${passed ? 'PASSED' : 'FAILED'}. Findings: ${findings.trim()}`,
       },
+    });
+
+    await recordAuditEvent(prisma, {
+      actionType: 'INSPECTION_RECORDED',
+      resourceId: requestRecord.resourceId,
+      departmentId: requestRecord.departmentId,
+      actorId: user.id,
+      actorName: user.fullName,
+      actorRole: userRole,
+      referenceId: requestRecord.requestNumber,
+      details: `QA Inspection (${inspectionType}): ${passed ? 'PASSED' : 'FAILED'}. Findings: ${findings.trim()}${certificationNumber ? ` [Cert #${certificationNumber.trim()}]` : ''}`,
     });
 
     return res.status(201).json({
