@@ -414,3 +414,117 @@ export interface DashboardMetrics {
   statusCounts: Record<string, number>;
   recentAlerts: NotificationItem[];
 }
+
+export interface ReportFilterParams {
+  startDate?: string;
+  endDate?: string;
+  departmentId?: string;
+  category?: string;
+  status?: string;
+  maintenanceStatus?: string;
+}
+
+export interface CategoryDistributionItem {
+  category: string;
+  count: number;
+  totalValueETB: number;
+  available: number;
+  assigned: number;
+  maintenance: number;
+}
+
+export interface DepartmentDistributionItem {
+  departmentId: string;
+  departmentName: string;
+  departmentCode: string;
+  count: number;
+  totalValueETB: number;
+}
+
+export interface CustodyDeptItem {
+  departmentId: string;
+  departmentName: string;
+  departmentCode: string;
+  count: number;
+}
+
+export interface CustodyEmployeeItem {
+  employeeId: string;
+  employeeName: string;
+  departmentName: string;
+  count: number;
+}
+
+export interface MaintenanceCostCategoryItem {
+  category: string;
+  count: number;
+  actualCostETB: number;
+}
+
+export interface RecentActivityItem {
+  type: 'ASSIGNMENT' | 'TRANSFER' | 'MAINTENANCE';
+  id: string;
+  referenceCode: string;
+  title: string;
+  resourceId: string;
+  resourceName: string;
+  resourceCode: string;
+  actorName: string;
+  departmentName: string;
+  timestamp: string;
+  status: string;
+}
+
+export interface ReportOverviewData {
+  metadata: {
+    scope: 'CORPORATION' | 'DEPARTMENT' | 'EMPLOYEE' | 'STORE' | 'TECHNICAL';
+    scopeLabel: string;
+    departmentId?: string;
+    departmentName?: string;
+    departmentCode?: string;
+    generatedAt: string;
+    filtersApplied: {
+      startDate: string | null;
+      endDate: string | null;
+      departmentId: string;
+      category: string;
+      status: string;
+      maintenanceStatus: string;
+    };
+  };
+  overview: {
+    totalResources: number;
+    available: number;
+    assigned: number;
+    underMaintenance: number;
+    retired: number;
+    disposed: number;
+    totalPurchaseCostETB: number;
+    totalCurrentValueETB: number;
+  };
+  distribution: {
+    byCategory: CategoryDistributionItem[];
+    byDepartment: DepartmentDistributionItem[];
+  };
+  custody: {
+    totalActiveAssignments: number;
+    totalUnassigned: number;
+    byDepartment: CustodyDeptItem[];
+    byEmployee: CustodyEmployeeItem[];
+  };
+  maintenance: {
+    byStatus: {
+      SUBMITTED: number;
+      APPROVED: number;
+      IN_PROGRESS: number;
+      ON_HOLD: number;
+      COMPLETED: number;
+      REJECTED: number;
+      total: number;
+    };
+    totalEstimatedCostETB: number;
+    totalActualCostETB: number;
+    byCategory: MaintenanceCostCategoryItem[];
+  };
+  recentActivities: RecentActivityItem[];
+}

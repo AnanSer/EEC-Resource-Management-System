@@ -46,7 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { name: 'Departments', path: '/departments', icon: Building2, allowedRoles: ['ADMIN', 'DEPARTMENT_MANAGER'] },
   { name: 'Employees', path: '/employees', icon: Users, allowedRoles: ['ADMIN', 'DEPARTMENT_MANAGER'] },
   { name: 'User Approvals', path: '/approvals', icon: CheckSquare, allowedRoles: ['ADMIN'] },
-  { name: 'Reports & Audits', path: '/reports', icon: FileBarChart, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'DEPARTMENT_MANAGER'] },
+  { name: 'Reports & Audits', path: '/reports', icon: FileBarChart, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
   { name: 'Notifications', path: '/notifications', icon: Bell, badge: '3', allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
   { name: 'Settings', path: '/settings', icon: Settings, allowedRoles: ['ADMIN'] },
   { name: 'My Profile', path: '/profile', icon: UserCheck, allowedRoles: ['ADMIN', 'STORE_KEEPER', 'IT_TECHNICIAN', 'DEPARTMENT_MANAGER', 'EMPLOYEE'] },
