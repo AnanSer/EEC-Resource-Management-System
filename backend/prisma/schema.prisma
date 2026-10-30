@@ -58,6 +58,7 @@ model User {
   updatedAt    DateTime    @updatedAt
 
   sessions     Session[]
+  notifications Notification[]
 
   @@map("users")
 }
@@ -375,4 +376,27 @@ model AuditEvent {
   @@index([timestamp])
   @@index([referenceId])
   @@map("audit_events")
+}
+
+// In-App Notification Model for Operations & Workflow Alerts
+model Notification {
+  id                String    @id @default(uuid())
+  recipientId       String
+  recipient         User      @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  title             String
+  message           String
+  type              String    @default("INFO") // INFO, SUCCESS, WARNING, CRITICAL, REQUISITION, MAINTENANCE, ASSIGNMENT, SYSTEM
+  priority          String    @default("NORMAL") // LOW, NORMAL, HIGH, CRITICAL
+  isRead            Boolean   @default(false)
+  readAt            DateTime?
+  actionUrl         String?
+  relatedEntityType String?   // REQUISITION, MAINTENANCE_REQUEST, RESOURCE, ASSIGNMENT, USER
+  relatedEntityId   String?
+  createdAt         DateTime  @default(now())
+
+  @@index([recipientId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([recipientId, isRead])
+  @@map("notifications")
 }
