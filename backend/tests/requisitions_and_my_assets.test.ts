@@ -149,7 +149,8 @@ async function runTests() {
     assert(!!empTid, 'Employee Haile Gebrselassie exists in TID');
     assert(!!empIct, 'Employee Kenenisa Bekele exists in ICT');
 
-    // Create a dedicated AVAILABLE test resource
+    // Create dedicated test resources:
+    // 1. Matching AVAILABLE asset (IT_EQUIPMENT)
     const testAsset = await prisma.resource.create({
       data: {
         itemCode: `TEST-CAD-${Date.now()}`,
@@ -162,6 +163,38 @@ async function runTests() {
         departmentId: deptIct!.id,
         purchaseCostETB: 185000,
         currentValueETB: 185000,
+      },
+    });
+
+    // 2. Mismatched category AVAILABLE asset (SURVEYING_GEOTECHNICAL)
+    const mismatchedCategoryAsset = await prisma.resource.create({
+      data: {
+        itemCode: `TEST-SURV-${Date.now()}`,
+        name: 'Leica TS16 Total Station',
+        category: 'SURVEYING_GEOTECHNICAL',
+        subcategory: 'Total Station',
+        status: 'AVAILABLE',
+        condition: 'GOOD',
+        location: 'Central Store - Kersa',
+        departmentId: deptTid!.id,
+        purchaseCostETB: 420000,
+        currentValueETB: 420000,
+      },
+    });
+
+    // 3. Unavailable asset in same category (IT_EQUIPMENT with status MAINTENANCE)
+    const unavailableAsset = await prisma.resource.create({
+      data: {
+        itemCode: `TEST-MAINT-${Date.now()}`,
+        name: 'Dell Latitude 5540 Under Repair',
+        category: 'IT_EQUIPMENT',
+        subcategory: 'Laptop',
+        status: 'MAINTENANCE',
+        condition: 'FAIR',
+        location: 'ICT Workshop',
+        departmentId: deptIct!.id,
+        purchaseCostETB: 75000,
+        currentValueETB: 75000,
       },
     });
 
@@ -253,7 +286,38 @@ async function runTests() {
     });
     assert(mgrFulfillFail.status === 403, 'Department Manager forbidden from fulfilling requisition (403)');
 
-    // Store Keeper fulfills approved requisition
+    // Store Keeper attempt to fulfill with mismatched category resource must be REJECTED (400)
+    console.log('\n--- 4a. Store Keeper Revalidation: Category Mismatch Rejection ---');
+    const categoryMismatchFulfill = await request('POST', `/api/requisitions/${req1.id}/fulfill`, {
+      cookie: storeKeeperCookie,
+      body: {
+        resourceId: mismatchedCategoryAsset.id,
+        handoverNotes: 'Attempting cross-category handover',
+      },
+    });
+    assert(categoryMismatchFulfill.status === 400, 'Cross-category asset handover is rejected with 400');
+    assert(
+      categoryMismatchFulfill.body.message?.includes('Category mismatch'),
+      'Error message clarifies category mismatch requirement'
+    );
+
+    // Store Keeper attempt to fulfill with non-AVAILABLE resource must be REJECTED (400)
+    console.log('\n--- 4b. Store Keeper Revalidation: Unavailable Asset Rejection ---');
+    const unavailableFulfill = await request('POST', `/api/requisitions/${req1.id}/fulfill`, {
+      cookie: storeKeeperCookie,
+      body: {
+        resourceId: unavailableAsset.id,
+        handoverNotes: 'Attempting maintenance asset handover',
+      },
+    });
+    assert(unavailableFulfill.status === 400, 'Non-AVAILABLE asset handover is rejected with 400');
+    assert(
+      unavailableFulfill.body.message?.includes('cannot be assigned because its status is') ||
+      unavailableFulfill.body.message?.includes('Only AVAILABLE resources can be allocated'),
+      'Error message clarifies resource is not AVAILABLE'
+    );
+
+    // Store Keeper fulfills approved requisition with matching AVAILABLE asset
     const storeFulfill = await request('POST', `/api/requisitions/${req1.id}/fulfill`, {
       cookie: storeKeeperCookie,
       body: {
@@ -302,6 +366,19 @@ async function runTests() {
       body: { resourceId: testAsset.id },
     });
     assert(adminDirectFulfillFail.status === 403, 'Admin receives 403 when trying to fulfill direct allocation');
+
+    // Store Keeper CANNOT fulfill using an already-ASSIGNED resource (testAsset is currently ASSIGNED)
+    console.log('\n--- 5a. Store Keeper Revalidation: Already Assigned Asset Rejection ---');
+    const storeDirectAssignedFail = await request('POST', `/api/requisitions/${adminAllocRes.body.requisition.id}/fulfill`, {
+      cookie: storeKeeperCookie,
+      body: { resourceId: testAsset.id },
+    });
+    assert(storeDirectAssignedFail.status === 400, 'Store Keeper receives 400 when trying to fulfill with already ASSIGNED resource');
+    assert(
+      storeDirectAssignedFail.body.message?.includes('cannot be assigned because its status is') ||
+      storeDirectAssignedFail.body.message?.includes('Only AVAILABLE resources can be allocated'),
+      'Error message clarifies asset is not AVAILABLE'
+    );
 
     // 7. Employee "My Assets" & "My Custody" Verification
     console.log('\n--- 6. Employee My Assets Profile Verification ---');
@@ -574,7 +651,11 @@ async function runTests() {
     // Cleanup test records
     console.log('\n--- Cleanup Test Records ---');
     await prisma.custodyTransfer.deleteMany({ where: { resourceId: testAsset.id } });
-    await prisma.resourceAssignment.deleteMany({ where: { resourceId: testAsset.id } });
+    await prisma.resourceAssignment.deleteMany({
+      where: {
+        resourceId: { in: [testAsset.id, mismatchedCategoryAsset.id, unavailableAsset.id] },
+      },
+    });
     await prisma.resourceRequisition.deleteMany({
       where: {
         id: {
@@ -590,7 +671,11 @@ async function runTests() {
         },
       },
     });
-    await prisma.resource.delete({ where: { id: testAsset.id } });
+    await prisma.resource.deleteMany({
+      where: {
+        id: { in: [testAsset.id, mismatchedCategoryAsset.id, unavailableAsset.id] },
+      },
+    });
     console.log('  ✓ Test requisition records and asset safely cleaned up');
 
   } catch (err) {

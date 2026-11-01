@@ -784,7 +784,14 @@ router.post('/:id/fulfill', requireAuth, requireRole(['STORE_KEEPER']), async (r
     if (resource.status !== 'AVAILABLE') {
       return res.status(400).json({
         success: false,
-        message: `Resource '${resource.itemCode}' is currently '${resource.status}'. Only AVAILABLE resources can be allocated.`,
+        message: `Resource '${resource.itemCode}' cannot be assigned because its status is '${resource.status}'. Only AVAILABLE resources can be allocated.`,
+      });
+    }
+
+    if (resource.category !== reqItem.category) {
+      return res.status(400).json({
+        success: false,
+        message: `Category mismatch: Requisition requires '${reqItem.category}', but selected resource '${resource.itemCode}' is '${resource.category}'.`,
       });
     }
 
@@ -799,6 +806,23 @@ router.post('/:id/fulfill', requireAuth, requireRole(['STORE_KEEPER']), async (r
 
     // Fulfill atomically via transaction
     const result = await prisma.$transaction(async (tx) => {
+      // Re-fetch and re-verify resource availability and category within transaction to avoid race conditions
+      const currentResource = await tx.resource.findUnique({
+        where: { id: resource.id },
+      });
+
+      if (!currentResource) {
+        throw new Error(`Resource with ID '${resource.id}' not found in registry`);
+      }
+
+      if (currentResource.status !== 'AVAILABLE') {
+        throw new Error(`Resource '${currentResource.itemCode}' cannot be assigned because its status is '${currentResource.status}'. Only AVAILABLE resources can be allocated.`);
+      }
+
+      if (currentResource.category !== reqItem.category) {
+        throw new Error(`Category mismatch: Requisition requires '${reqItem.category}', but selected resource '${currentResource.itemCode}' is '${currentResource.category}'.`);
+      }
+
       // 0. Ensure any prior assignments for this resource are not current
       await tx.resourceAssignment.updateMany({
         where: { resourceId: resource.id, isCurrent: true },
@@ -894,8 +918,18 @@ router.post('/:id/fulfill', requireAuth, requireRole(['STORE_KEEPER']), async (r
         currentAssigneeName: result.updatedResource.currentAssignee?.name,
       },
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[POST /api/requisitions/:id/fulfill Error]', err);
+    if (err && typeof err.message === 'string' && (
+      err.message.includes('cannot be assigned') ||
+      err.message.includes('Category mismatch') ||
+      err.message.includes('not found in registry')
+    )) {
+      return res.status(400).json({
+        success: false,
+        message: err.message,
+      });
+    }
     return res.status(500).json({
       success: false,
       message: 'Failed to fulfill requisition',

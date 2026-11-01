@@ -8,6 +8,7 @@ import { ResourceRequisition, Resource, ResourceCategory, Department, Employee }
 import { PageHeader } from '../../components/ui/PageHeader';
 import { CategoryBadge } from '../../components/ui/CategoryBadge';
 import { Modal } from '../../components/ui/Modal';
+import { HandoverAssetCombobox } from '../../components/ui/HandoverAssetCombobox';
 import { 
   ClipboardList, 
   Plus, 
@@ -284,6 +285,10 @@ export const RequisitionsPage: React.FC = () => {
   const handleFulfill = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeReq) return;
+    if (!selectedAssetId) {
+      setFulfillError('Please select a valid physical asset to fulfill this requisition.');
+      return;
+    }
     setFulfilling(true);
     setFulfillError(null);
     try {
@@ -834,12 +839,8 @@ export const RequisitionsPage: React.FC = () => {
                   <button
                     onClick={() => {
                       setActiveReq(req);
-                      const matching = availableResources.filter(r => r.category === req.category);
-                      if (matching.length > 0) {
-                        setSelectedAssetId(matching[0].id);
-                      } else if (availableResources.length > 0) {
-                        setSelectedAssetId(availableResources[0].id);
-                      }
+                      const matching = availableResources.filter(r => r.status === 'AVAILABLE' && r.category === req.category);
+                      setSelectedAssetId(matching.length > 0 ? matching[0].id : '');
                       setHandoverNotes('');
                       setFulfillLocation('');
                       setFulfillError(null);
@@ -1074,44 +1075,18 @@ export const RequisitionsPage: React.FC = () => {
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-              Select Available Physical Asset in Warehouse *
-            </label>
-            {availableResources.length === 0 ? (
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800">
-                No available assets currently in store. Please register or intake inventory first.
-              </div>
-            ) : (
-              <select
-                value={selectedAssetId}
-                onChange={(e) => setSelectedAssetId(e.target.value)}
-                required
-                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
-              >
-                {/* First show matching category */}
-                <optgroup label={`Matching Category: ${activeReq?.category}`}>
-                  {availableResources
-                    .filter(r => r.category === activeReq?.category)
-                    .map(r => (
-                      <option key={r.id} value={r.id}>
-                        {r.itemCode} • {r.name} ({r.condition}, {r.location})
-                      </option>
-                    ))}
-                </optgroup>
-                {/* Fallback show all other categories */}
-                <optgroup label="Other Available Assets">
-                  {availableResources
-                    .filter(r => r.category !== activeReq?.category)
-                    .map(r => (
-                      <option key={r.id} value={r.id}>
-                        {r.itemCode} • {r.name} ({r.category})
-                      </option>
-                    ))}
-                </optgroup>
-              </select>
-            )}
-          </div>
+          <HandoverAssetCombobox
+            resources={availableResources}
+            requiredCategory={activeReq?.category}
+            selectedResourceId={selectedAssetId}
+            onSelect={(r) => {
+              setSelectedAssetId(r ? r.id : '');
+              if (fulfillError) setFulfillError(null);
+            }}
+            label="Select Available Physical Asset in Warehouse"
+            required
+            error={fulfillError}
+          />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
@@ -1149,7 +1124,7 @@ export const RequisitionsPage: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={fulfilling || availableResources.length === 0}
+              disabled={fulfilling || !selectedAssetId}
               className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm disabled:opacity-50"
             >
               {fulfilling ? 'Fulfilling...' : 'Confirm Store Handover'}
