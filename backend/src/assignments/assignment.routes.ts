@@ -20,7 +20,9 @@ function formatAssignment(a: any) {
     resourceName: a.resource?.name || '',
     resourceCode: a.resource?.itemCode || '',
     resourceCategory: a.resource?.category || '',
+    resourceSerialNumber: a.resource?.serialNumber || (a.resource?.specs && typeof a.resource.specs === 'object' ? ((a.resource.specs as any).serialNumber || (a.resource.specs as any).chassisNumber || '') : '') || '',
     employeeId: a.employeeId,
+    employeeCode: a.employee?.employeeId || '',
     employeeName: a.employee?.name || '',
     employeeDesignation: a.employee?.designation || '',
     employeeEmail: a.employee?.email || '',
@@ -124,7 +126,7 @@ router.get('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
     }
 
     const pageNum = Math.max(1, parseInt(page || '1', 10));
-    const limitNum = Math.max(1, Math.min(100, parseInt(limit || '50', 10)));
+    const limitNum = Math.max(1, Math.min(500, parseInt(limit || '50', 10)));
     const skip = (pageNum - 1) * limitNum;
 
     const [total, rawAssignments] = await Promise.all([
@@ -250,6 +252,140 @@ router.get('/my-custody', requireAuth, async (req: AppRequest, res: AppResponse)
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve personal custody records',
+    });
+  }
+});
+
+/**
+ * GET /api/assignments/return-eligible
+ * Authoritative endpoint for return-eligible resources in genuine active custody.
+ * 
+ * Strict Return-Eligibility Criteria:
+ * 1. Resource.status = 'ASSIGNED'
+ * 2. ResourceAssignment.isCurrent = true
+ * 3. ResourceAssignment.status = 'ACTIVE'
+ * 4. ResourceAssignment belongs to the resource (assignment.resourceId = resource.id)
+ * 5. Resource.currentAssigneeId strictly matches ResourceAssignment.employeeId
+ * 6. No return or transfer has closed the assignment
+ */
+router.get('/return-eligible', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const userRole = req.user!.role;
+    const userDeptId = req.user!.departmentId;
+    const { search, departmentId } = req.query || {};
+
+    let filter: any = {
+      isCurrent: true,
+      status: 'ACTIVE',
+      resource: {
+        status: 'ASSIGNED',
+      },
+    };
+
+    // Role-based scoping: Department Manager is restricted to their directorate
+    if (userRole === 'DEPARTMENT_MANAGER') {
+      if (!userDeptId) {
+        return res.status(200).json({
+          success: true,
+          resources: [],
+          total: 0,
+        });
+      }
+      filter.departmentId = userDeptId;
+    } else if (departmentId && departmentId !== 'ALL') {
+      filter.departmentId = departmentId;
+    }
+
+    const rawActive = await prisma.resourceAssignment.findMany({
+      where: filter,
+      include: {
+        resource: {
+          include: {
+            department: true,
+            currentAssignee: true,
+          },
+        },
+        employee: true,
+        department: true,
+      },
+      orderBy: [{ assignedAt: 'desc' }],
+    });
+
+    // Enforce condition: resource.currentAssigneeId MUST strictly match assignment.employeeId
+    const genuineHoldings = rawActive.filter(
+      (a) => a.resource && a.resource.status === 'ASSIGNED' && a.resource.currentAssigneeId === a.employeeId
+    );
+
+    // Format as return-eligible resources
+    let eligibleResources = genuineHoldings.map((a) => {
+      const r = a.resource;
+      const serial =
+        r.serialNumber ||
+        (r.specs && typeof r.specs === 'object'
+          ? (r.specs as any).serialNumber || (r.specs as any).chassisNumber || ''
+          : '') ||
+        '';
+
+      return {
+        id: r.id,
+        itemCode: r.itemCode,
+        name: r.name,
+        category: r.category,
+        subcategory: r.subcategory || 'Standard Equipment',
+        description: r.description || '',
+        manufacturer: r.manufacturer || '',
+        model: r.model || '',
+        serialNumber: serial,
+        status: r.status,
+        condition: r.condition,
+        location: r.location,
+        departmentId: r.departmentId,
+        department: r.department
+          ? { id: r.department.id, name: r.department.name, code: r.department.code }
+          : null,
+        currentDepartmentId: a.departmentId,
+        currentDepartmentName: a.department?.name || r.department?.name || 'Central Warehouse',
+        currentAssigneeId: a.employee.id,
+        currentAssigneeName: a.employee.name,
+        currentAssigneeEmployeeId: a.employee.employeeId,
+        assignedAt: a.assignedAt ? a.assignedAt.toISOString() : undefined,
+        activeAssignmentId: a.id,
+        activeAssignmentNumber: a.assignmentNumber,
+      };
+    });
+
+    // Search filter across: itemCode, name, serialNumber, current custodian name, employeeId, department
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      eligibleResources = eligibleResources.filter((r) => {
+        const itemCode = (r.itemCode || '').toLowerCase();
+        const name = (r.name || '').toLowerCase();
+        const serial = (r.serialNumber || '').toLowerCase();
+        const custodian = (r.currentAssigneeName || '').toLowerCase();
+        const empId = (r.currentAssigneeEmployeeId || '').toLowerCase();
+        const dept = (r.currentDepartmentName || '').toLowerCase();
+
+        return (
+          itemCode.includes(q) ||
+          name.includes(q) ||
+          serial.includes(q) ||
+          custodian.includes(q) ||
+          empId.includes(q) ||
+          dept.includes(q)
+        );
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      resources: eligibleResources,
+      total: eligibleResources.length,
+    });
+  } catch (err) {
+    console.error('[GET /api/assignments/return-eligible Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve return-eligible assigned resources',
     });
   }
 });
@@ -1155,7 +1291,23 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
     if (!currentAssignment) {
       return res.status(400).json({
         success: false,
-        message: `No active assignment found for resource '${targetResource.itemCode}'`,
+        message: `No active assignment found for resource '${targetResource.itemCode}'. Stale, unassigned, or already-returned resources cannot be returned.`,
+      });
+    }
+
+    // Validate active assignment belongs to targetResource
+    if (currentAssignment.resourceId !== targetResource.id) {
+      return res.status(400).json({
+        success: false,
+        message: `Assignment '${currentAssignment.assignmentNumber}' does not belong to resource '${targetResource.itemCode}'. Return rejected.`,
+      });
+    }
+
+    // Validate custody consistency: resource.currentAssigneeId must match assignment.employeeId
+    if (targetResource.currentAssigneeId && targetResource.currentAssigneeId !== currentAssignment.employeeId) {
+      return res.status(400).json({
+        success: false,
+        message: `Custody inconsistency detected: Resource '${targetResource.itemCode}' currentAssigneeId does not match active assignment custodian '${currentAssignment.employee?.name}'. Return rejected.`,
       });
     }
 
@@ -1212,6 +1364,21 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
     const finalLocation = returnLocation ? returnLocation.trim() : 'Central Store - Kersa';
 
     const result = await prisma.$transaction(async (tx) => {
+      // Atomic verification under transaction
+      const lockedAssignment = await tx.resourceAssignment.findUnique({
+        where: { id: currentAssignment.id },
+      });
+      if (!lockedAssignment || !lockedAssignment.isCurrent || lockedAssignment.status !== 'ACTIVE') {
+        throw new Error(`Assignment '${currentAssignment.assignmentNumber}' is no longer active. Duplicate or concurrent returns are rejected.`);
+      }
+
+      const lockedResource = await tx.resource.findUnique({
+        where: { id: targetResource.id },
+      });
+      if (!lockedResource || lockedResource.status !== 'ASSIGNED') {
+        throw new Error(`Resource '${targetResource.itemCode}' is no longer marked as ASSIGNED. Concurrent return rejected.`);
+      }
+
       // 1. Mark assignment as RETURNED
       const closedAssignment = await tx.resourceAssignment.update({
         where: { id: currentAssignment.id },

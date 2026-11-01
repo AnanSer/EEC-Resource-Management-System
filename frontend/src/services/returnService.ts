@@ -1,5 +1,5 @@
 import api from '../lib/axios';
-import { AssetReturnRecord, UserRole } from '../types';
+import { AssetReturnRecord, Resource, UserRole } from '../types';
 
 export interface ScopeContext {
   role: UserRole;
@@ -45,6 +45,23 @@ export const returnService = {
       return assignments.map(mapAssignmentToReturnRecord);
     } catch (err) {
       console.error('[returnService.getAll Error]', err);
+      return [];
+    }
+  },
+
+  /**
+   * Fetch only resources with genuine active custody (eligible for direct return).
+   */
+  async getReturnEligible(search?: string): Promise<Resource[]> {
+    try {
+      const params: Record<string, any> = {};
+      if (search && search.trim()) {
+        params.search = search.trim();
+      }
+      const res = await api.get('/assignments/return-eligible', { params });
+      return res.data.resources || [];
+    } catch (err) {
+      console.error('[returnService.getReturnEligible Error]', err);
       return [];
     }
   },

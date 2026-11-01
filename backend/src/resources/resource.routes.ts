@@ -43,7 +43,7 @@ function formatResource(r: any) {
     description: r.description || '',
     manufacturer: r.manufacturer || '',
     model: r.model || '',
-    serialNumber: r.serialNumber || '',
+    serialNumber: r.serialNumber || (r.specs && typeof r.specs === 'object' ? (r.specs.serialNumber || r.specs.chassisNumber || '') : '') || '',
     status: r.status,
     condition: r.condition,
     location: r.location,
@@ -53,6 +53,7 @@ function formatResource(r: any) {
     currentDepartmentName: r.department?.name || 'Central Warehouse',
     currentAssigneeId: r.currentAssigneeId || undefined,
     currentAssigneeName: r.currentAssignee?.name || undefined,
+    currentAssigneeEmployeeId: r.currentAssignee?.employeeId || undefined,
     assignedAt: r.assignedAt ? r.assignedAt.toISOString() : undefined,
     purchaseDate: r.purchaseDate ? r.purchaseDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     purchaseCostETB: r.purchaseCostETB ?? 0,
@@ -244,7 +245,7 @@ router.get('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
     }
 
     const pageNum = Math.max(1, parseInt(page || '1', 10));
-    const limitNum = Math.max(1, Math.min(100, parseInt(limit || '50', 10)));
+    const limitNum = Math.max(1, Math.min(500, parseInt(limit || '50', 10)));
     const skip = (pageNum - 1) * limitNum;
 
 
@@ -280,6 +281,105 @@ router.get('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to retrieve resources from registry',
+    });
+  }
+});
+
+/**
+ * GET /api/resources/return-eligible
+ * Return only resources that have genuine active custody.
+ */
+router.get('/return-eligible', requireAuth, async (req: AppRequest, res: AppResponse) => {
+  try {
+    const userRole = req.user!.role;
+    const userDeptId = req.user!.departmentId;
+    const { search, departmentId } = req.query || {};
+
+    let filter: any = {
+      isCurrent: true,
+      status: 'ACTIVE',
+      resource: {
+        status: 'ASSIGNED',
+      },
+    };
+
+    if (userRole === 'DEPARTMENT_MANAGER') {
+      if (!userDeptId) {
+        return res.status(200).json({
+          success: true,
+          resources: [],
+          total: 0,
+        });
+      }
+      filter.departmentId = userDeptId;
+    } else if (departmentId && departmentId !== 'ALL') {
+      filter.departmentId = departmentId;
+    }
+
+    const rawActive = await prisma.resourceAssignment.findMany({
+      where: filter,
+      include: {
+        resource: {
+          include: {
+            department: true,
+            currentAssignee: true,
+          },
+        },
+        employee: true,
+        department: true,
+      },
+      orderBy: [{ assignedAt: 'desc' }],
+    });
+
+    const genuineHoldings = rawActive.filter(
+      (a) => a.resource && a.resource.status === 'ASSIGNED' && a.resource.currentAssigneeId === a.employeeId
+    );
+
+    let eligibleResources = genuineHoldings.map((a) => {
+      const formatted = formatResource(a.resource);
+      return {
+        ...formatted,
+        currentDepartmentId: a.departmentId,
+        currentDepartmentName: a.department?.name || formatted.currentDepartmentName,
+        currentAssigneeId: a.employee.id,
+        currentAssigneeName: a.employee.name,
+        currentAssigneeEmployeeId: a.employee.employeeId,
+        activeAssignmentId: a.id,
+        activeAssignmentNumber: a.assignmentNumber,
+      };
+    });
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      eligibleResources = eligibleResources.filter((r) => {
+        const itemCode = (r.itemCode || '').toLowerCase();
+        const name = (r.name || '').toLowerCase();
+        const serial = (r.serialNumber || '').toLowerCase();
+        const custodian = (r.currentAssigneeName || '').toLowerCase();
+        const empId = (r.currentAssigneeEmployeeId || '').toLowerCase();
+        const dept = (r.currentDepartmentName || '').toLowerCase();
+
+        return (
+          itemCode.includes(q) ||
+          name.includes(q) ||
+          serial.includes(q) ||
+          custodian.includes(q) ||
+          empId.includes(q) ||
+          dept.includes(q)
+        );
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      resources: eligibleResources,
+      total: eligibleResources.length,
+    });
+  } catch (err) {
+    console.error('[GET /api/resources/return-eligible Error]', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve return-eligible assigned resources',
     });
   }
 });

@@ -226,8 +226,11 @@ export interface Resource {
   currentDepartmentId?: string;
   departmentId?: string;
   currentDepartmentName?: string;
+  department?: { id: string; name: string; code: string } | null;
   currentAssigneeId?: string;
   currentAssigneeName?: string;
+  currentAssigneeEmployeeId?: string;
+  serialNumber?: string;
   assignedAt?: string;
   purchaseDate: string;
   purchaseCostETB: number;

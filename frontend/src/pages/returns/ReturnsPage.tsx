@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { returnService } from '../../services/returnService';
-import { resourceService } from '../../services/resourceService';
 import { AssetReturnRecord, Resource, ResourceCondition } from '../../types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Modal } from '../../components/ui/Modal';
 import { StatusBadge } from '../../components/ui/StatusBadge';
+import { AssetSearchCombobox } from '../../components/ui/AssetSearchCombobox';
 import { 
   RotateCcw, 
    
@@ -37,6 +37,7 @@ export const ReturnsPage: React.FC = () => {
   const [walkInLocation, setWalkInLocation] = useState('Central Warehouse - Kersa, Room 12');
   const [walkInNotes, setWalkInNotes] = useState('');
   const [processingWalkIn, setProcessingWalkIn] = useState(false);
+  const [walkInError, setWalkInError] = useState<string | null>(null);
 
   // Employee Schedule Return Modal
   const [isScheduleReturnOpen, setIsScheduleReturnOpen] = useState(false);
@@ -49,16 +50,14 @@ export const ReturnsPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [rets, res] = await Promise.all([
+      const [rets, eligible] = await Promise.all([
         returnService.getAll(),
-        resourceService.getAll()
+        returnService.getReturnEligible()
       ]);
       setReturns(rets);
-      const assigned = res.filter(r => r.status === 'ASSIGNED');
-      setAssignedResources(assigned);
-      if (assigned.length > 0) {
-        setWalkInResourceId(assigned[0].id);
-        setScheduledResourceId(assigned[0].id);
+      setAssignedResources(eligible);
+      if (eligible.length > 0 && !scheduledResourceId) {
+        setScheduledResourceId(eligible[0].id);
       }
     } catch (err) {
       console.error(err);
@@ -97,7 +96,12 @@ export const ReturnsPage: React.FC = () => {
 
   const handleWalkInReturn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!walkInResourceId) {
+      setWalkInError('Please select a currently assigned asset to return.');
+      return;
+    }
     setProcessingWalkIn(true);
+    setWalkInError(null);
     try {
       await returnService.receive({
         resourceId: walkInResourceId,
@@ -108,11 +112,14 @@ export const ReturnsPage: React.FC = () => {
         isWalkIn: true
       });
       setIsWalkInModalOpen(false);
+      setWalkInResourceId('');
+      setWalkInNotes('');
       setToastMessage('Direct walk-in return processed. Asset custody released.');
       setTimeout(() => setToastMessage(null), 3500);
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Walk-in return failed');
+      const msg = err.response?.data?.message || err.message || 'Walk-in return failed';
+      setWalkInError(msg);
     } finally {
       setProcessingWalkIn(false);
     }
@@ -338,28 +345,33 @@ export const ReturnsPage: React.FC = () => {
       {/* Direct Walk-in Return Modal */}
       <Modal
         isOpen={isWalkInModalOpen}
-        onClose={() => setIsWalkInModalOpen(false)}
+        onClose={() => {
+          setIsWalkInModalOpen(false);
+          setWalkInError(null);
+        }}
         title="Direct Walk-in Return Clearance"
         subtitle="Immediately receive an assigned asset brought directly to the warehouse counter"
       >
         <form onSubmit={handleWalkInReturn} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-              Select Currently Assigned Asset *
-            </label>
-            <select
-              value={walkInResourceId}
-              onChange={(e) => setWalkInResourceId(e.target.value)}
-              required
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
-            >
-              {assignedResources.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.itemCode} • {r.name} (Holder: {r.currentAssigneeName})
-                </option>
-              ))}
-            </select>
-          </div>
+          <AssetSearchCombobox
+            label="Select Currently Assigned Asset"
+            required
+            resources={assignedResources}
+            selectedResourceId={walkInResourceId}
+            isLoading={loading}
+            error={walkInError || undefined}
+            onSelect={(resource) => {
+              setWalkInError(null);
+              if (resource) {
+                setWalkInResourceId(resource.id);
+                if (resource.condition) {
+                  setWalkInCondition(resource.condition);
+                }
+              } else {
+                setWalkInResourceId('');
+              }
+            }}
+          />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
@@ -407,15 +419,18 @@ export const ReturnsPage: React.FC = () => {
           <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={() => setIsWalkInModalOpen(false)}
+              onClick={() => {
+                setIsWalkInModalOpen(false);
+                setWalkInError(null);
+              }}
               className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={processingWalkIn}
-              className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm"
+              disabled={processingWalkIn || !walkInResourceId}
+              className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {processingWalkIn ? 'Processing...' : 'Confirm Walk-in Return'}
             </button>
@@ -431,23 +446,16 @@ export const ReturnsPage: React.FC = () => {
         subtitle="Notify Store Keepers of an upcoming equipment surrender"
       >
         <form onSubmit={handleScheduleReturn} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-              Select Asset in Custody *
-            </label>
-            <select
-              value={scheduledResourceId}
-              onChange={(e) => setScheduledResourceId(e.target.value)}
-              required
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
-            >
-              {assignedResources.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.itemCode} • {r.name} (Assigned: {r.currentAssigneeName})
-                </option>
-              ))}
-            </select>
-          </div>
+          <AssetSearchCombobox
+            label="Select Asset in Custody"
+            required
+            resources={assignedResources}
+            selectedResourceId={scheduledResourceId}
+            isLoading={loading}
+            onSelect={(resource) => {
+              setScheduledResourceId(resource ? resource.id : '');
+            }}
+          />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
@@ -473,8 +481,8 @@ export const ReturnsPage: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={scheduling}
-              className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm"
+              disabled={scheduling || !scheduledResourceId}
+              className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {scheduling ? 'Scheduling...' : 'Submit Return Notice'}
             </button>
