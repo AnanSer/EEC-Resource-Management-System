@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { CategoryBadge } from '../../components/ui/CategoryBadge';
 import { Modal } from '../../components/ui/Modal';
 import { HandoverAssetCombobox } from '../../components/ui/HandoverAssetCombobox';
+import { EmployeeSearchCombobox } from '../../components/ui/EmployeeSearchCombobox';
 import { 
   ClipboardList, 
   Plus, 
@@ -127,6 +128,7 @@ export const RequisitionsPage: React.FC = () => {
     setJustification('');
     setUrgency('ROUTINE');
     setRequiredDate(getEthiopiaTodayDateString());
+    setTargetEmpId('');
     setIsSubmitModalOpen(true);
   };
 
@@ -168,7 +170,7 @@ export const RequisitionsPage: React.FC = () => {
       setRequisitions(reqs);
       setAvailableResources(res.filter(r => r.status === 'AVAILABLE'));
       setDepartments(depts);
-      setEmployees(emps.filter(e => e.isActive));
+      setEmployees(emps);
 
       if (depts.length > 0 && !targetDeptId) {
         setTargetDeptId(currentUser.departmentId || depts[0].id);
@@ -925,8 +927,7 @@ export const RequisitionsPage: React.FC = () => {
                   onChange={(e) => {
                     const did = e.target.value;
                     setTargetDeptId(did);
-                    const matchingEmps = employees.filter(emp => emp.departmentId === did);
-                    if (matchingEmps.length > 0) setTargetEmpId(matchingEmps[0].id);
+                    setTargetEmpId('');
                   }}
                   className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-medium focus:outline-none"
                 >
@@ -937,19 +938,15 @@ export const RequisitionsPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Assignee Employee</label>
-                <select
-                  value={targetEmpId}
-                  onChange={(e) => setTargetEmpId(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl font-medium focus:outline-none"
-                >
-                  <option value="">-- First available department staff --</option>
-                  {employees
-                    .filter(e => !targetDeptId || e.departmentId === targetDeptId)
-                    .map(e => (
-                      <option key={e.id} value={e.id}>{e.name} ({e.designation})</option>
-                    ))}
-                </select>
+                <EmployeeSearchCombobox
+                  employees={employees}
+                  selectedDepartmentId={targetDeptId}
+                  departmentName={departments.find(d => d.id === targetDeptId)?.name}
+                  selectedEmployeeId={targetEmpId}
+                  onSelect={(emp) => setTargetEmpId(emp ? emp.id : '')}
+                  label="Assignee Employee"
+                  placeholder="Search staff by name, ID, or designation..."
+                />
               </div>
             </div>
           )}

@@ -402,14 +402,21 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
     }
 
     if (!targetEmployeeId) {
-      // Find an active employee in target department
+      // Find an active approved employee in target department
       const firstEmp = await prisma.employee.findFirst({
-        where: { departmentId: targetDeptId, isActive: true },
+        where: {
+          departmentId: targetDeptId,
+          isActive: true,
+          OR: [
+            { user: null },
+            { user: { status: 'APPROVED' } },
+          ],
+        },
       });
       if (!firstEmp) {
         return res.status(400).json({
           success: false,
-          message: 'No active employee found in target department to assign requisition custody',
+          message: 'No active approved employee found in target department to assign requisition custody',
         });
       }
       targetEmployeeId = firstEmp.id;
@@ -417,7 +424,7 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
 
     const targetEmp = await prisma.employee.findUnique({
       where: { id: targetEmployeeId },
-      include: { department: true },
+      include: { department: true, user: true },
     });
 
     if (!targetEmp || !targetEmp.isActive) {
@@ -425,6 +432,31 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
         success: false,
         message: 'Target employee is either invalid or inactive',
       });
+    }
+
+    // Validate department membership
+    if (targetEmp.departmentId !== targetDeptId) {
+      return res.status(400).json({
+        success: false,
+        message: `Department mismatch: Employee '${targetEmp.name}' belongs to '${targetEmp.department?.name || targetEmp.departmentId}', not '${targetDeptId}'.`,
+      });
+    }
+
+    // Validate account eligibility (APPROVED required; PENDING, REJECTED, SUSPENDED forbidden)
+    if (targetEmp.user) {
+      const userStatus = targetEmp.user.status;
+      if (userStatus === 'PENDING' || userStatus === 'REJECTED' || userStatus === 'SUSPENDED') {
+        return res.status(400).json({
+          success: false,
+          message: `Employee '${targetEmp.name}' cannot be assigned because their account status is '${userStatus}'. Only APPROVED employees can be assigned.`,
+        });
+      }
+      if (userStatus !== 'APPROVED') {
+        return res.status(400).json({
+          success: false,
+          message: `Employee '${targetEmp.name}' cannot be assigned because their account status is '${userStatus}'. Only APPROVED employees can be assigned.`,
+        });
+      }
     }
 
     // Generate requisition number

@@ -350,7 +350,7 @@ async function runTests() {
         itemDescription: 'Direct Total Station Allocation for Road Project',
         justification: 'Executive direction for rapid deployment',
         urgency: 'EMERGENCY_PROJECT',
-        requiredDate: '2026-11-01',
+        requiredDate: '2026-11-15',
         departmentId: deptTid!.id,
         employeeId: empTid!.id,
         isDirectAllocation: true,
