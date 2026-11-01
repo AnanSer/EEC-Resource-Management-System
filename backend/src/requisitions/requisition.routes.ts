@@ -12,6 +12,33 @@ import {
 
 const router = new Router();
 
+/**
+ * Helper to get current calendar date in Ethiopia (Africa/Addis_Ababa) in YYYY-MM-DD format
+ */
+export function getEthiopiaTodayDateString(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Addis_Ababa',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+/**
+ * Format a Date or date string to YYYY-MM-DD in Ethiopia timezone
+ */
+export function formatRequiredDate(d: Date | string | null | undefined): string {
+  if (!d) return '';
+  const dateObj = typeof d === 'string' ? new Date(d) : d;
+  if (isNaN(dateObj.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Addis_Ababa',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(dateObj);
+}
+
 function formatRequisition(r: any) {
   return {
     id: r.id,
@@ -28,7 +55,7 @@ function formatRequisition(r: any) {
     justification: r.justification,
     urgency: r.urgency,
     status: r.status,
-    requiredDate: r.requiredDate ? r.requiredDate.toISOString().split('T')[0] : '',
+    requiredDate: formatRequiredDate(r.requiredDate),
     isDirectAllocation: r.isDirectAllocation,
     approvedBy: r.approvedByName || undefined,
     approvedAt: r.approvedAt ? r.approvedAt.toISOString() : undefined,
@@ -254,6 +281,50 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       });
     }
 
+    // Validate requiredDate (or default to current local date in Africa/Addis_Ababa)
+    const todayInEthiopia = getEthiopiaTodayDateString();
+    let parsedRequiredDate: Date;
+
+    if (requiredDate !== undefined && requiredDate !== null && String(requiredDate).trim() !== '') {
+      const trimmedDate = String(requiredDate).trim();
+      const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmedDate);
+      if (!dateMatch) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid required date format. Expected YYYY-MM-DD',
+        });
+      }
+
+      const year = parseInt(dateMatch[1], 10);
+      const month = parseInt(dateMatch[2], 10);
+      const day = parseInt(dateMatch[3], 10);
+
+      const utcDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+      if (
+        utcDate.getUTCFullYear() !== year ||
+        utcDate.getUTCMonth() !== month - 1 ||
+        utcDate.getUTCDate() !== day
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid calendar date for required by date',
+        });
+      }
+
+      const dateOnlyStr = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      if (dateOnlyStr < todayInEthiopia) {
+        return res.status(400).json({
+          success: false,
+          message: `Required by date cannot be in the past. Minimum selectable date is today (${todayInEthiopia})`,
+        });
+      }
+
+      parsedRequiredDate = utcDate;
+    } else {
+      const [tYear, tMonth, tDay] = todayInEthiopia.split('-').map(Number);
+      parsedRequiredDate = new Date(Date.UTC(tYear, tMonth - 1, tDay, 0, 0, 0, 0));
+    }
+
     // Determine target department and target employee
     let targetDeptId = departmentId;
     let targetEmployeeId = employeeId;
@@ -379,7 +450,7 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
         justification: justification.trim(),
         urgency: urgency || 'ROUTINE',
         status: isDirect ? 'APPROVED' : 'PENDING',
-        requiredDate: requiredDate ? new Date(requiredDate) : undefined,
+        requiredDate: parsedRequiredDate,
         isDirectAllocation: isDirect,
         approvedById: isDirect ? user.id : null,
         approvedByName: isDirect ? user.fullName : null,
@@ -501,7 +572,7 @@ router.post('/:id/approve', requireAuth, requireRole(['ADMIN']), async (req: App
         message: `Your requisition for ${reqItem.itemDescription} was approved by ${user.fullName || 'Administrator'}. Ready for warehouse fulfillment.`,
         type: 'REQUISITION',
         priority: 'HIGH',
-        actionUrl: '/requisitions',
+        actionUrl: `/requisitions?search=${encodeURIComponent(reqItem.requisitionNumber)}`,
         relatedEntityType: 'REQUISITION',
         relatedEntityId: reqItem.id,
       });
@@ -805,7 +876,7 @@ router.post('/:id/fulfill', requireAuth, requireRole(['STORE_KEEPER']), async (r
         message: `Physical asset '${resource.name}' (${resource.itemCode}) has been allocated and handed over for your requisition.`,
         type: 'REQUISITION',
         priority: 'HIGH',
-        actionUrl: '/resources',
+        actionUrl: `/requisitions?search=${encodeURIComponent(reqItem.requisitionNumber)}`,
         relatedEntityType: 'RESOURCE',
         relatedEntityId: resource.id,
       });

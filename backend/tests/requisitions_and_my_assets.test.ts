@@ -437,17 +437,157 @@ async function runTests() {
     await prisma.resource.delete({ where: { id: testAsset2.id } });
     console.log('  ✓ testAsset2 cleaned up');
 
+    // 10. Required By Date Validation & Timezone Fidelity
+    console.log('\n--- 10. Required By Date Validation & Timezone Fidelity ---');
+    const ethiopiaToday = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Africa/Addis_Ababa',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+
+    // 10.1 Default date is today's local date in Ethiopia (Form 1: Standard Requisition)
+    const defaultReqRes = await request('POST', '/api/requisitions', {
+      cookie: employeeCookie,
+      body: {
+        category: 'IT_EQUIPMENT',
+        itemDescription: 'Standard issue laptop without explicit required date',
+        justification: 'Hydraulic modeling computations for central grid',
+        urgency: 'ROUTINE',
+      },
+    });
+    assert(defaultReqRes.status === 201, 'Requisition created with default required date (201)');
+    const defaultReq = defaultReqRes.body.requisition;
+    assert(
+      defaultReq.requiredDate === ethiopiaToday,
+      `Default date is today's local date in Ethiopia (${ethiopiaToday})`
+    );
+
+    // 10.2 Both forms use the same correct default behavior (Form 2: Admin Direct Allocation)
+    const defaultDirectAllocRes = await request('POST', '/api/requisitions', {
+      cookie: adminCookie,
+      body: {
+        category: 'IT_EQUIPMENT',
+        itemDescription: 'Direct allocation without explicit required date',
+        justification: 'Emergency site deployment for sub-station review',
+        urgency: 'ROUTINE',
+        departmentId: deptTid!.id,
+        employeeId: empTid!.id,
+        isDirectAllocation: true,
+      },
+    });
+    assert(defaultDirectAllocRes.status === 201, 'Direct allocation created with default required date (201)');
+    const defaultDirectReq = defaultDirectAllocRes.body.requisition;
+    assert(
+      defaultDirectReq.requiredDate === ethiopiaToday,
+      `Both forms use the same correct default date behavior (${ethiopiaToday})`
+    );
+
+    // 10.3 Past dates are rejected
+    const pastDateRes = await request('POST', '/api/requisitions', {
+      cookie: employeeCookie,
+      body: {
+        category: 'IT_EQUIPMENT',
+        itemDescription: 'Laptop with yesterday date',
+        justification: 'Testing past date rejection',
+        requiredDate: '2026-10-31',
+      },
+    });
+    assert(pastDateRes.status === 400, 'Past required date rejected with 400');
+    assert(
+      pastDateRes.body.message?.includes('cannot be in the past'),
+      'Error message clarifies date cannot be in the past'
+    );
+
+    const oldYearRes = await request('POST', '/api/requisitions', {
+      cookie: employeeCookie,
+      body: {
+        category: 'IT_EQUIPMENT',
+        itemDescription: 'Laptop with prior year date',
+        justification: 'Testing prior year rejection',
+        requiredDate: '2025-01-15',
+      },
+    });
+    assert(oldYearRes.status === 400, 'Prior year required date rejected with 400');
+
+    const invalidCalendarRes = await request('POST', '/api/requisitions', {
+      cookie: employeeCookie,
+      body: {
+        category: 'IT_EQUIPMENT',
+        itemDescription: 'Laptop with invalid calendar date',
+        justification: 'Testing invalid calendar date rejection',
+        requiredDate: '2026-02-31',
+      },
+    });
+    assert(invalidCalendarRes.status === 400, 'Invalid calendar date rejected with 400');
+
+    const malformedDateRes = await request('POST', '/api/requisitions', {
+      cookie: employeeCookie,
+      body: {
+        category: 'IT_EQUIPMENT',
+        itemDescription: 'Laptop with malformed date',
+        justification: 'Testing malformed date rejection',
+        requiredDate: 'not-a-date',
+      },
+    });
+    assert(malformedDateRes.status === 400, 'Malformed required date rejected with 400');
+
+    // 10.4 Valid future dates are accepted
+    const futureDate = '2026-11-20';
+    const futureReqRes = await request('POST', '/api/requisitions', {
+      cookie: employeeCookie,
+      body: {
+        category: 'IT_EQUIPMENT',
+        itemDescription: 'Laptop with valid future date',
+        justification: 'Project kickoff in late November',
+        requiredDate: futureDate,
+      },
+    });
+    assert(futureReqRes.status === 201, 'Valid future date accepted (201)');
+    const futureReq = futureReqRes.body.requisition;
+    assert(futureReq.requiredDate === futureDate, `Future date matches submitted date (${futureDate})`);
+
+    const farFutureDate = '2027-06-30';
+    const farFutureRes = await request('POST', '/api/requisitions', {
+      cookie: employeeCookie,
+      body: {
+        category: 'IT_EQUIPMENT',
+        itemDescription: 'Long term instrumentation',
+        justification: 'FY2027 infrastructure phase',
+        requiredDate: farFutureDate,
+      },
+    });
+    assert(farFutureRes.status === 201, 'Far future date accepted without arbitrary max ceiling (201)');
+    const farFutureReq = farFutureRes.body.requisition;
+    assert(farFutureReq.requiredDate === farFutureDate, 'Far future date preserved');
+
+    // 10.5 Date remains correct when saved and displayed (No timezone shift)
+    const getReqRes = await request('GET', `/api/requisitions/${futureReq.id}`, {
+      cookie: employeeCookie,
+    });
+    assert(getReqRes.status === 200, 'GET /api/requisitions/:id returns 200');
+    assert(
+      getReqRes.body.requisition.requiredDate === futureDate,
+      'Date remains exactly correct when saved and displayed without timezone shift'
+    );
+
     // Cleanup test records
     console.log('\n--- Cleanup Test Records ---');
     await prisma.custodyTransfer.deleteMany({ where: { resourceId: testAsset.id } });
     await prisma.resourceAssignment.deleteMany({ where: { resourceId: testAsset.id } });
     await prisma.resourceRequisition.deleteMany({
       where: {
-        OR: [
-          { id: req1.id },
-          { id: reqToReject.id },
-          { id: adminAllocRes.body.requisition.id },
-        ],
+        id: {
+          in: [
+            req1.id,
+            reqToReject.id,
+            adminAllocRes.body.requisition.id,
+            defaultReq.id,
+            defaultDirectReq.id,
+            futureReq.id,
+            farFutureReq.id,
+          ],
+        },
       },
     });
     await prisma.resource.delete({ where: { id: testAsset.id } });

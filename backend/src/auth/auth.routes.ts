@@ -231,7 +231,7 @@ router.post('/register', async (req: AppRequest, res: AppResponse) => {
       message: `User ${newUser.fullName} (${newUser.email}) registered an account in ${dept.name} awaiting administrator approval.`,
       type: 'USER',
       priority: 'NORMAL',
-      actionUrl: '/employees',
+      actionUrl: '/approvals',
       relatedEntityType: 'USER',
       relatedEntityId: newUser.id,
     });

@@ -389,8 +389,53 @@ async function runTests() {
     });
     assert(!!empApproveNotif, 'Requesting employee received Requisition Approved notification');
     if (empApproveNotif) createdNotificationIds.push(empApproveNotif.id);
+    assert(
+      empApproveNotif?.actionUrl === `/requisitions?search=${encodeURIComponent(reqItem1.requisitionNumber)}`,
+      `Requisition Approved notification actionUrl navigates to employee requisition (/requisitions?search=${reqItem1.requisitionNumber})`
+    );
 
-    // 11.3 Rejection test
+    // 11.3 Store Keeper fulfills requisition
+    const fulfillResource = await prisma.resource.create({
+      data: {
+        itemCode: `TEST-FULFILL-RES-${Date.now()}`,
+        name: 'Lenovo ThinkStation P620 (Test Fulfill Asset)',
+        category: 'IT_EQUIPMENT',
+        status: 'AVAILABLE',
+        condition: 'EXCELLENT',
+        departmentId: employeeUser!.departmentId || 'dept-101',
+      },
+    });
+    cleanupResourceIds.push(fulfillResource.id);
+
+    const fulfillRes = await request('POST', `/api/requisitions/${reqItem1.id}/fulfill`, {
+      cookie: storeKeeperCookie,
+      body: {
+        resourceId: fulfillResource.id,
+        handoverNotes: 'Issued hardware from Central Store',
+      },
+    });
+    assert(fulfillRes.status === 200, 'Store Keeper fulfilled requisition (200)');
+    if (fulfillRes.body.assignment?.id) {
+      cleanupAsgnIds.push(fulfillRes.body.assignment.id);
+    }
+
+    const empFulfillNotif = await prisma.notification.findFirst({
+      where: {
+        recipientId: employeeId,
+        type: 'REQUISITION',
+        title: { contains: 'Requisition Fulfilled' },
+        relatedEntityId: fulfillResource.id,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    assert(!!empFulfillNotif, 'Requesting employee received Requisition Fulfilled notification');
+    if (empFulfillNotif) createdNotificationIds.push(empFulfillNotif.id);
+    assert(
+      empFulfillNotif?.actionUrl === `/requisitions?search=${encodeURIComponent(reqItem1.requisitionNumber)}`,
+      `Requisition Fulfilled notification actionUrl navigates to fulfilled requisition (/requisitions?search=${reqItem1.requisitionNumber})`
+    );
+
+    // 11.4 Rejection test
     const reqSubmitRes2 = await request('POST', '/api/requisitions', {
       cookie: employeeCookie,
       body: {
@@ -690,6 +735,14 @@ async function runTests() {
     });
     assert(!!adminRegNotif, 'Admin received New User Registration notification');
     if (adminRegNotif) createdNotificationIds.push(adminRegNotif.id);
+    assert(
+      adminRegNotif?.actionUrl === '/approvals',
+      'New User Registration notification actionUrl navigates to /approvals (not /employees)'
+    );
+    assert(
+      adminRegNotif?.type === 'USER' && adminRegNotif?.priority === 'NORMAL',
+      'New User Registration notification preserved type=USER and priority=NORMAL'
+    );
 
     // 14.2 Admin approves applicant
     const approveUserRes = await request('POST', `/api/auth/users/${newUserId}/approve`, {

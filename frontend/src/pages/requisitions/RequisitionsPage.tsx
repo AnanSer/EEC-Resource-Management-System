@@ -23,10 +23,23 @@ import {
   RotateCcw,
   Clock,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+
+/**
+ * Returns today's calendar date string in Ethiopia (Africa/Addis_Ababa) in YYYY-MM-DD format
+ */
+export const getEthiopiaTodayDateString = (): string => {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Addis_Ababa',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+};
 
 export const RequisitionsPage: React.FC = () => {
   const { currentUser, currentRole } = useAuth();
+  const [searchParams] = useSearchParams();
   const [requisitions, setRequisitions] = useState<ResourceRequisition[]>([]);
   const [availableResources, setAvailableResources] = useState<Resource[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -77,6 +90,7 @@ export const RequisitionsPage: React.FC = () => {
     if (!q) return true;
 
     return (
+      (req.id && req.id.toLowerCase() === q) ||
       (req.requisitionNumber && req.requisitionNumber.toLowerCase().includes(q)) ||
       (req.itemDescription && req.itemDescription.toLowerCase().includes(q)) ||
       (req.justification && req.justification.toLowerCase().includes(q)) ||
@@ -97,12 +111,23 @@ export const RequisitionsPage: React.FC = () => {
   const [itemDescription, setItemDescription] = useState('');
   const [justification, setJustification] = useState('');
   const [urgency, setUrgency] = useState<'ROUTINE' | 'URGENT' | 'EMERGENCY_PROJECT'>('ROUTINE');
-  const [requiredDate, setRequiredDate] = useState('2026-11-20');
+  const [requiredDate, setRequiredDate] = useState<string>(getEthiopiaTodayDateString());
   const [targetDeptId, setTargetDeptId] = useState('');
   const [targetEmpId, setTargetEmpId] = useState('');
   const [isDirectAllocation, setIsDirectAllocation] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const openSubmitModal = (direct: boolean) => {
+    setIsDirectAllocation(direct);
+    setSubmitError(null);
+    setCategory('IT_EQUIPMENT');
+    setItemDescription('');
+    setJustification('');
+    setUrgency('ROUTINE');
+    setRequiredDate(getEthiopiaTodayDateString());
+    setIsSubmitModalOpen(true);
+  };
 
   // Approve Modal (Admin)
   const [isApproveModalOpen, setIsApproveModalOpen] = useState(false);
@@ -158,6 +183,23 @@ export const RequisitionsPage: React.FC = () => {
     loadData();
   }, [currentRole, currentUser.departmentId]);
 
+  useEffect(() => {
+    const qParam = searchParams.get('search') || searchParams.get('q') || searchParams.get('requisitionNumber');
+    const idParam = searchParams.get('id') || searchParams.get('requisitionId');
+    if (qParam) {
+      setSearchQuery(qParam);
+      setStatusFilter('ALL');
+    } else if (idParam) {
+      const match = requisitions.find(r => r.id === idParam);
+      if (match) {
+        setSearchQuery(match.requisitionNumber);
+      } else {
+        setSearchQuery(idParam);
+      }
+      setStatusFilter('ALL');
+    }
+  }, [searchParams, requisitions]);
+
   const handleSubmitRequisition = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -177,6 +219,7 @@ export const RequisitionsPage: React.FC = () => {
       setItemDescription('');
       setJustification('');
       setIsDirectAllocation(false);
+      setRequiredDate(getEthiopiaTodayDateString());
       setToastMessage(
         isDirectAllocation
           ? 'Corporate allocation initiated and approved. Ready for Store Keeper fulfillment.'
@@ -283,11 +326,7 @@ export const RequisitionsPage: React.FC = () => {
         <div className="flex items-center gap-2">
           {currentRole === 'ADMIN' && (
             <button
-              onClick={() => {
-                setIsDirectAllocation(true);
-                setSubmitError(null);
-                setIsSubmitModalOpen(true);
-              }}
+              onClick={() => openSubmitModal(true)}
               className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition-colors"
             >
               <Send className="w-4 h-4 text-eec-primary" />
@@ -296,11 +335,7 @@ export const RequisitionsPage: React.FC = () => {
           )}
 
           <button
-            onClick={() => {
-              setIsDirectAllocation(false);
-              setSubmitError(null);
-              setIsSubmitModalOpen(true);
-            }}
+            onClick={() => openSubmitModal(false)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl font-bold text-xs transition-colors shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -657,11 +692,23 @@ export const RequisitionsPage: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredRequisitions.map((req) => (
-            <div
-              key={req.id}
-              className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm hover:border-slate-300 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
-            >
+          {filteredRequisitions.map((req) => {
+            const isTarget = Boolean(
+              searchQuery.trim() && (
+                req.requisitionNumber.toLowerCase() === searchQuery.toLowerCase().trim() ||
+                req.id.toLowerCase() === searchQuery.toLowerCase().trim() ||
+                (searchParams.get('id') && req.id === searchParams.get('id'))
+              )
+            );
+            return (
+              <div
+                key={req.id}
+                className={`bg-white rounded-2xl border p-5 shadow-sm transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                  isTarget
+                    ? 'border-eec-primary ring-2 ring-eec-primary/20 shadow-md'
+                    : 'border-slate-200/80 hover:border-slate-300'
+                }`}
+              >
               <div className="space-y-2 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
@@ -816,7 +863,8 @@ export const RequisitionsPage: React.FC = () => {
                 )}
               </div>
             </div>
-          ))}
+          );
+        })}
         </div>
       )}
 
@@ -938,6 +986,7 @@ export const RequisitionsPage: React.FC = () => {
             <input
               type="date"
               required
+              min={getEthiopiaTodayDateString()}
               value={requiredDate}
               onChange={(e) => setRequiredDate(e.target.value)}
               className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"

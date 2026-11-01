@@ -478,7 +478,14 @@ router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
         justification: r.justification,
         urgency: r.urgency,
         status: r.status,
-        requiredDate: r.requiredDate ? r.requiredDate.toISOString().split('T')[0] : '',
+        requiredDate: r.requiredDate
+          ? new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Africa/Addis_Ababa',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+            }).format(r.requiredDate)
+          : '',
         createdAt: r.createdAt.toISOString(),
         fulfilledResourceName: r.fulfilledResource?.name || null,
         fulfilledResourceCode: r.fulfilledResource?.itemCode || null,
