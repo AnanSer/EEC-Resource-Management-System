@@ -66,7 +66,14 @@ interface AuthContextType {
   isAuthenticated: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string; code?: string }>;
-  register: (fullName: string, email: string, password: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  register: (
+    fullName: string,
+    email: string,
+    password: string,
+    departmentId?: string,
+    employeeId?: string,
+    phone?: string
+  ) => Promise<{ success: boolean; message?: string; error?: string }>;
   logout: () => Promise<void>;
   switchRole?: (role: UserRole) => void;
   allRoles: RoleMeta[];
@@ -135,9 +142,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (fullName: string, email: string, password: string) => {
+  const register = async (
+    fullName: string,
+    email: string,
+    password: string,
+    departmentId?: string,
+    employeeId?: string,
+    phone?: string
+  ) => {
     try {
-      const res = await api.post('/auth/register', { fullName, email, password });
+      const res = await api.post('/auth/register', {
+        fullName,
+        email,
+        password,
+        departmentId,
+        employeeId: employeeId?.trim() || undefined,
+        phone: phone?.trim() || undefined,
+      });
       return {
         success: true,
         message: res.data?.message || 'Registration submitted for administrator approval.',

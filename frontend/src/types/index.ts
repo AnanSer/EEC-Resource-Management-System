@@ -52,11 +52,100 @@ export interface Employee {
   phone: string;
   departmentId: string;
   departmentName?: string;
+  departmentCode?: string;
   designation: string;
   role: UserRole;
+  accountStatus?: 'PENDING' | 'APPROVED' | 'SUSPENDED' | 'REJECTED' | 'UNREGISTERED' | string;
   isActive: boolean;
   avatarUrl?: string;
   hireDate: string;
+  userId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  assignedResourcesCount?: number;
+  assignmentsCount?: number;
+  requisitionsCount?: number;
+}
+
+export interface EmployeeProfileDossier {
+  employee: Employee;
+  dossier: {
+    assignedResources: Array<{
+      id: string;
+      itemCode: string;
+      name: string;
+      category: string;
+      subcategory: string;
+      status: string;
+      condition: string;
+      location: string;
+      assignedAt: string | null;
+    }>;
+    assignments: Array<{
+      id: string;
+      assignmentNumber: string;
+      resourceId: string;
+      resourceName: string;
+      resourceCode: string;
+      category: string;
+      assignedAt: string;
+      expectedReturnDate: string | null;
+      returnedAt: string | null;
+      status: string;
+      isCurrent: boolean;
+      purpose?: string;
+      notes?: string;
+    }>;
+    transfers: Array<{
+      id: string;
+      transferNumber: string;
+      resourceId: string;
+      resourceName: string;
+      resourceCode: string;
+      fromEmployeeName: string;
+      toEmployeeName: string;
+      isOrigin: boolean;
+      fromDepartmentName: string;
+      toDepartmentName: string;
+      transferredAt: string;
+      reason?: string;
+      notes?: string;
+    }>;
+    requisitions: Array<{
+      id: string;
+      requisitionNumber: string;
+      category: string;
+      itemDescription: string;
+      justification: string;
+      urgency: string;
+      status: string;
+      requiredDate: string;
+      createdAt: string;
+      fulfilledResourceName: string | null;
+      fulfilledResourceCode: string | null;
+    }>;
+    maintenanceRequests: Array<{
+      id: string;
+      requestNumber: string;
+      resourceId: string;
+      resourceName: string;
+      resourceCode: string;
+      title: string;
+      description: string;
+      priority: string;
+      status: string;
+      reportedDate: string;
+      actualCostETB?: number;
+    }>;
+    auditEvents: Array<{
+      id: string;
+      actionType: string;
+      actorName: string;
+      actorRole: string;
+      details: string;
+      timestamp: string;
+    }>;
+  };
 }
 
 export interface UserApproval {

@@ -53,6 +53,8 @@ model User {
   status       String      @default("PENDING")
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  employeeId   String?
+  phone        String?
   employee     Employee?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt

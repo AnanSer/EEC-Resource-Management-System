@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { DashboardLayout } from '../components/layout/DashboardLayout';
@@ -14,6 +14,7 @@ import { MaintenancePage } from '../pages/maintenance/MaintenancePage';
 import { InspectionsPage } from '../pages/inspections/InspectionsPage';
 import { DepartmentsPage } from '../pages/departments/DepartmentsPage';
 import { EmployeesPage } from '../pages/employees/EmployeesPage';
+import { EmployeeDetailPage } from '../pages/employees/EmployeeDetailPage';
 import { ApprovalsPage } from '../pages/approvals/ApprovalsPage';
 import { ReportsPage } from '../pages/reports/ReportsPage';
 import { NotificationsPage } from '../pages/notifications/NotificationsPage';
@@ -68,6 +69,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="inspections" element={<InspectionsPage />} />
         <Route path="departments" element={<DepartmentsPage />} />
         <Route path="employees" element={<EmployeesPage />} />
+        <Route path="employees/:id" element={<EmployeeDetailPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
