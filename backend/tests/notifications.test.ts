@@ -130,6 +130,7 @@ async function runTests() {
   const cleanupReqIds: string[] = [];
   const cleanupMntIds: string[] = [];
   const cleanupAsgnIds: string[] = [];
+  const cleanupResourceIds: string[] = [];
 
   try {
     // 1. Unauthenticated Security Boundaries
@@ -424,23 +425,18 @@ async function runTests() {
     // 12. Real Business Events: Assignment, Transfer & Return
     // =========================================================================
     console.log('\n--- 12. Real Business Events: Asset Custody Lifecycle ---');
-    // Find an available resource
-    let testResource = await prisma.resource.findFirst({
-      where: { status: 'AVAILABLE' },
+    // Create dedicated isolated test resource to ensure test idempotency
+    const testResource = await prisma.resource.create({
+      data: {
+        itemCode: `TEST-NOTIF-RES-${Date.now()}`,
+        name: 'Dell Precision Mobile Workstation 7780 (Test Rig)',
+        category: 'IT_EQUIPMENT',
+        status: 'AVAILABLE',
+        condition: 'EXCELLENT',
+        departmentId: employeeUser!.departmentId || 'dept-101',
+      },
     });
-
-    if (!testResource) {
-      testResource = await prisma.resource.create({
-        data: {
-          itemCode: `TEST-RES-${Date.now()}`,
-          name: 'Dell Precision Mobile Workstation 7780',
-          category: 'IT_EQUIPMENT',
-          status: 'AVAILABLE',
-          condition: 'EXCELLENT',
-          departmentId: employeeUser!.departmentId || 'dept-101',
-        },
-      });
-    }
+    cleanupResourceIds.push(testResource.id);
 
     const employeeRecord = await prisma.employee.findFirst({
       where: { userId: employeeId },
@@ -775,6 +771,12 @@ async function runTests() {
 
     if (cleanupAsgnIds.length > 0) {
       await prisma.resourceAssignment.deleteMany({ where: { id: { in: cleanupAsgnIds } } }).catch(() => {});
+    }
+
+    if (cleanupResourceIds.length > 0) {
+      await prisma.auditEvent.deleteMany({ where: { resourceId: { in: cleanupResourceIds } } }).catch(() => {});
+      await prisma.notification.deleteMany({ where: { relatedEntityId: { in: cleanupResourceIds } } }).catch(() => {});
+      await prisma.resource.deleteMany({ where: { id: { in: cleanupResourceIds } } }).catch(() => {});
     }
 
     if (cleanupUserIds.length > 0) {

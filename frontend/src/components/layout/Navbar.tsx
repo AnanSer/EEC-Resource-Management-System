@@ -144,7 +144,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                     </div>
                   ) : (
                     recentNotifications.map((item) => {
-                      const dest = item.actionUrl || item.link;
+                      const rawDest = (item.actionUrl || item.link || '').trim();
+                      const dest = rawDest ? (rawDest.startsWith('/') ? rawDest : `/${rawDest}`) : null;
                       return (
                         <div
                           key={item.id}
@@ -155,7 +156,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
                               } catch {}
                             }
                             setNotifDropdownOpen(false);
-                            if (dest && dest.startsWith('/')) {
+                            if (dest) {
                               navigate(dest);
                             } else {
                               navigate('/notifications');

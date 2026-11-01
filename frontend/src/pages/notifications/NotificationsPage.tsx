@@ -54,6 +54,8 @@ export const NotificationsPage: React.FC = () => {
 
       if (activeTab === 'UNREAD') {
         params.unreadOnly = true;
+      } else if (activeTab === 'ACTION_REQUIRED') {
+        params.unreadOnly = true;
       } else if (activeTab === 'CRITICAL') {
         params.priority = 'CRITICAL';
       }
@@ -130,8 +132,9 @@ export const NotificationsPage: React.FC = () => {
         await handleMarkAsRead(item.id);
       } catch {}
     }
-    const dest = item.actionUrl || item.link;
-    if (dest && dest.startsWith('/')) {
+    const rawDest = (item.actionUrl || item.link || '').trim();
+    const dest = rawDest ? (rawDest.startsWith('/') ? rawDest : `/${rawDest}`) : null;
+    if (dest) {
       navigate(dest);
     }
   };
@@ -338,8 +341,9 @@ export const NotificationsPage: React.FC = () => {
           </div>
         ) : (
           displayedNotifications.map((item) => {
-            const dest = item.actionUrl || item.link;
-            const isClickable = Boolean(dest && dest.startsWith('/'));
+            const rawDest = (item.actionUrl || item.link || '').trim();
+            const dest = rawDest ? (rawDest.startsWith('/') ? rawDest : `/${rawDest}`) : null;
+            const isClickable = Boolean(dest);
 
             return (
               <div
@@ -396,7 +400,7 @@ export const NotificationsPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 flex-shrink-0">
-                  {dest && dest.startsWith('/') && (
+                  {dest && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
