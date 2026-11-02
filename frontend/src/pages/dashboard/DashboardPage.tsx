@@ -115,23 +115,14 @@ export const DashboardPage: React.FC = () => {
         </div>
         
         <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-xs font-semibold text-cyan-200 mb-3 border border-white/10">
-            <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-            {isDepartmentScoped
-              ? `Scope: Department-Level (${departmentName})`
-              : 'Scope: Corporation-Wide (Enterprise Master View)'}
-          </div>
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
             Welcome back, {currentUser.name}
           </h1>
           <p className="text-sm md:text-base text-cyan-100/90 mt-2 font-normal leading-relaxed">
             {currentUser.designation} • {departmentName}
           </p>
-          <p className="text-xs text-cyan-200/70 mt-1">
-            Active Persona: <strong className="text-white">{currentRole}</strong> ({isDepartmentScoped ? 'Department-scoped inventory views' : 'Full corporation visibility'})
-          </p>
 
-          <div className="flex flex-wrap items-center gap-3 mt-5">
+          <div className="flex flex-wrap items-center gap-3 mt-6">
             <Link
               to="/resources"
               className="inline-flex items-center gap-2 px-4 py-2 bg-white text-eec-primary font-bold text-xs rounded-xl hover:bg-cyan-50 transition-colors shadow-sm"
