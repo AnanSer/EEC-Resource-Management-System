@@ -1,6 +1,24 @@
 import crypto from 'crypto';
 
 /**
+ * Standard minimum password length across all EEC RMS authentication paths (SEC-13)
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * Validates password format and minimum length requirements.
+ */
+export function validatePasswordPolicy(password: unknown): { valid: boolean; message?: string } {
+  if (!password || typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+    return {
+      valid: false,
+      message: `Password is required and must be at least ${MIN_PASSWORD_LENGTH} characters long`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Secure password hashing using Node.js built-in scrypt
  * Format: salt:derivedKeyHex
  */

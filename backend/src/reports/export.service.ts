@@ -1,15 +1,8 @@
 import { SimplePDFDocument, PDFTableColumn } from './pdfGenerator';
 import { generateExcelWorkbook } from './xlsxGenerator';
+import { escapeCSV, sanitizeCSVValue } from './csvSanitizer';
 
-/**
- * Escapes a single CSV field value according to RFC 4180
- * Correctly handles quotes, commas, and newlines.
- */
-function escapeCSV(val: any): string {
-  if (val === null || val === undefined) return '""';
-  const str = String(val);
-  return `"${str.replace(/"/g, '""')}"`;
-}
+export { escapeCSV, sanitizeCSVValue };
 
 /**
  * Generates formatted CSV string for Audit Events.

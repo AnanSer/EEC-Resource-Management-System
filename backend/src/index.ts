@@ -124,13 +124,31 @@ export async function requestListener(req: http.IncomingMessage, res: http.Serve
       }
     });
   } catch (err: any) {
-    console.error('[EEC-RMS Error]', err);
+    const errorId = `ERR-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    console.error(`[EEC-RMS Internal Error ${errorId}]`, err);
+
     if (!appRes.writableEnded) {
-      const statusCode = err.message?.includes('Payload Too Large') ? 413 : 500;
-      appRes.status(statusCode).json({
-        success: false,
-        message: err.message || 'Internal Server Error',
-      });
+      if (err.message?.includes('Payload Too Large')) {
+        appRes.status(413).json({
+          success: false,
+          error: 'Payload Too Large',
+          message: 'Request payload exceeds allowed limit',
+        });
+      } else if (err.message?.includes('Invalid JSON format')) {
+        appRes.status(400).json({
+          success: false,
+          error: 'Bad Request',
+          message: 'Invalid JSON format in request body',
+        });
+      } else {
+        // SEC-10: Never leak raw error messages, SQL errors, or stack traces to clients
+        appRes.status(500).json({
+          success: false,
+          error: 'Internal Server Error',
+          message: 'An unexpected internal server error occurred. Please contact IT support.',
+          errorId,
+        });
+      }
     }
   }
 }

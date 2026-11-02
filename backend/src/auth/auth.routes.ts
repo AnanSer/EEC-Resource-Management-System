@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Router } from '../http/router';
 import { AppRequest, AppResponse } from '../http/types';
-import { hashPassword, verifyPassword } from './password';
+import { hashPassword, verifyPassword, validatePasswordPolicy } from './password';
 import { createSession, destroySession, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS, getSessionCookieOptions } from './session';
 import { requireRole } from './auth.middleware';
 import prisma from '../lib/prisma';
@@ -82,10 +82,12 @@ router.post('/register', async (req: AppRequest, res: AppResponse) => {
       });
     }
 
-    if (!password || typeof password !== 'string' || password.length < 6) {
+    // Enforce consistent minimum 8 characters password policy (SEC-13)
+    const pwdValidation = validatePasswordPolicy(password);
+    if (!pwdValidation.valid) {
       return res.status(400).json({
         success: false,
-        message: 'Password is required and must be at least 6 characters',
+        message: pwdValidation.message,
       });
     }
 
@@ -572,10 +574,11 @@ router.post('/reset-password', async (req: AppRequest, res: AppResponse) => {
       });
     }
 
-    if (!password || typeof password !== 'string' || password.length < 8) {
+    const pwdValidation = validatePasswordPolicy(password);
+    if (!pwdValidation.valid) {
       return res.status(400).json({
         success: false,
-        message: 'New password is required and must be at least 8 characters long',
+        message: pwdValidation.message,
       });
     }
 

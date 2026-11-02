@@ -1284,7 +1284,7 @@ router.delete('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => 
     console.error('[DELETE /api/resources/:id Error]', err);
     return res.status(500).json({
       success: false,
-      message: err.message || 'Failed to delete resource',
+      message: 'Failed to delete resource',
     });
   }
 });

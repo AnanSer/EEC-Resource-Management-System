@@ -1,19 +1,16 @@
 import React, { useState } from 'react';
 import { PageHeader } from '../../components/ui/PageHeader';
-import { mockStore } from '../../mock/store';
 import { 
-  RotateCcw, 
-  CheckCircle2, 
-  AlertTriangle, 
   ShieldCheck, 
   Building2, 
   Hash, 
-  Cpu
+  Cpu,
+  Server,
+  Database,
+  Lock
 } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
-  const [resetting, setResetting] = useState(false);
-  const [resetSuccess, setResetSuccess] = useState(false);
   const [codePrefixes, setCodePrefixes] = useState({
     vehicle: 'EEC-VEH-',
     machinery: 'EEC-MAC-',
@@ -24,29 +21,12 @@ export const SettingsPage: React.FC = () => {
   const [boloNoticeDays, setBoloNoticeDays] = useState(30);
   const [calibrationNoticeDays, setCalibrationNoticeDays] = useState(45);
 
-  const handleReset = async () => {
-    setResetting(true);
-    if ((mockStore as any).resetToInitial) {
-      await (mockStore as any).resetToInitial();
-    }
-    setResetting(false);
-    setResetSuccess(true);
-    setTimeout(() => setResetSuccess(false), 4000);
-  };
-
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
       <PageHeader
         title="System & Corporate Configuration"
-        subtitle="Corporate asset numbering formats, statutory expiry thresholds, and prototype test controls"
+        subtitle="Corporate asset numbering formats, statutory regulatory thresholds, and corporation facilities"
       />
-
-      {resetSuccess && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2 animate-fadeIn">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-          <span>Demo notifications and prototype state have been reset to default baseline.</span>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Section 1: Item Code Formats */}
@@ -169,38 +149,48 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Section 4: Prototype Diagnostics & In-Memory Store Controls */}
+        {/* Section 4: Enterprise Platform & Deployment Architecture */}
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 space-y-4">
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Cpu className="w-5 h-5 text-amber-600" />
+            <Cpu className="w-5 h-5 text-eec-primary" />
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Prototype Diagnostics & Controls</h3>
-              <p className="text-xs text-slate-500">In-memory mock store and compliance verification</p>
+              <h3 className="text-sm font-bold text-slate-900">Platform & System Architecture</h3>
+              <p className="text-xs text-slate-500">EEC RMS production environment and governance profile</p>
             </div>
           </div>
 
-          <div className="space-y-3 text-xs">
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-1">
-              <span className="font-bold text-slate-800">Stack Verification</span>
-              <p className="text-slate-500 text-[11px]">React 18 + Vite 6 + Tailwind CSS 3 + TypeScript 5. Zero Better Auth dependencies.</p>
+          <div className="space-y-2.5 text-xs">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Server className="w-4 h-4 text-slate-600" />
+                <div>
+                  <p className="font-bold text-slate-800">Backend Architecture</p>
+                  <p className="text-[11px] text-slate-500">Native Node.js HTTP (node:http) + TypeScript</p>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700">Render</span>
             </div>
 
-            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/60 space-y-2">
-              <div className="flex items-center gap-2 text-amber-800 font-bold">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                <span>Reset Prototype State</span>
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-emerald-600" />
+                <div>
+                  <p className="font-bold text-slate-800">Relational Database</p>
+                  <p className="text-[11px] text-slate-500">PostgreSQL + Prisma ORM Client</p>
+                </div>
               </div>
-              <p className="text-amber-700 text-[11px]">
-                Resets notifications and in-memory mock alerts back to clean demonstration state.
-              </p>
-              <button
-                onClick={handleReset}
-                disabled={resetting}
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                {resetting ? 'Resetting...' : 'Reset In-Memory State'}
-              </button>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700">Supabase</span>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-purple-600" />
+                <div>
+                  <p className="font-bold text-slate-800">Security & Authentication</p>
+                  <p className="text-[11px] text-slate-500">Strict RBAC, HttpOnly Session Cookies, CSP & HSTS</p>
+                </div>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700">Enforced</span>
             </div>
           </div>
         </div>
