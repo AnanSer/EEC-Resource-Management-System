@@ -8,6 +8,8 @@ export interface EmployeeSearchComboboxProps {
   onSelect: (employee: Employee | null) => void;
   selectedDepartmentId?: string;
   departmentName?: string;
+  excludeEmployeeId?: string;
+  excludeEmployeeIds?: string[];
   isLoading?: boolean;
   disabled?: boolean;
   label?: string;
@@ -19,7 +21,7 @@ export interface EmployeeSearchComboboxProps {
 
 /**
  * Validates whether an employee is eligible for asset allocation:
- * 1. Must belong to the currently selected department/directorate.
+ * 1. Must belong to the currently selected department/directorate (if selectedDepartmentId is provided).
  * 2. Must be active (isActive = true).
  * 3. Must have an APPROVED account status (PENDING, REJECTED, SUSPENDED forbidden).
  */
@@ -57,7 +59,7 @@ export function isEligibleEmployee(e: Employee, selectedDepartmentId?: string): 
 }
 
 /**
- * Searchable Combobox for Employee Selection in Requisition and Direct Allocation forms.
+ * Searchable Combobox for Employee Selection in Requisitions, Direct Equipment Assignment, and Custody Transfer forms.
  * 
  * Supports search by:
  * - Employee Full Name (e.g. Haile Gebrselassie)
@@ -66,9 +68,11 @@ export function isEligibleEmployee(e: Employee, selectedDepartmentId?: string): 
  * - Department Name or Code (e.g. TID, Transport & Infrastructure Design)
  * 
  * Enforces:
- * - Only APPROVED, active employees belonging to the selected department are shown.
+ * - Only APPROVED, active employees are shown.
+ * - If selectedDepartmentId is provided, restricts to that department.
+ * - If excludeEmployeeId / excludeEmployeeIds is provided, excludes them (e.g. current custodian during transfer).
  * - Keyboard navigation (ArrowDown, ArrowUp, Enter, Escape, Tab).
- * - Immediate clear when department changes.
+ * - Immediate clear when department or asset changes.
  */
 export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
   employees,
@@ -76,6 +80,8 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
   onSelect,
   selectedDepartmentId,
   departmentName,
+  excludeEmployeeId,
+  excludeEmployeeIds,
   isLoading = false,
   disabled = false,
   label = 'Assignee Employee',
@@ -100,8 +106,12 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
 
   // Filter only eligible employees belonging to the selected directorate with APPROVED accounts
   const eligibleEmployees = useMemo(() => {
-    return employees.filter((e) => isEligibleEmployee(e, selectedDepartmentId));
-  }, [employees, selectedDepartmentId]);
+    return employees.filter((e) => {
+      if (excludeEmployeeId && e.id === excludeEmployeeId) return false;
+      if (excludeEmployeeIds && excludeEmployeeIds.includes(e.id)) return false;
+      return isEligibleEmployee(e, selectedDepartmentId);
+    });
+  }, [employees, selectedDepartmentId, excludeEmployeeId, excludeEmployeeIds]);
 
   // Filter based on search query (name, employee ID, designation, department)
   const filteredEmployees = useMemo(() => {
@@ -153,8 +163,8 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
     }
   }, [highlightedIndex, isOpen, filteredEmployees.length]);
 
-  const handleSelectEmployee = (employee: Employee) => {
-    onSelect(employee);
+  const handleSelectEmployee = (emp: Employee) => {
+    onSelect(emp);
     setIsOpen(false);
     setSearchQuery('');
   };
@@ -232,46 +242,52 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
 
       {/* Selected Employee Display Card */}
       {selectedEmployee && !isOpen ? (
-        <div className="bg-slate-50 border-2 border-emerald-500/30 rounded-xl p-3 shadow-xs transition-all relative group">
+        <div className="bg-slate-50 border-2 border-emerald-500/30 rounded-xl p-3 shadow-sm transition-all relative group">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1 flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-bold text-slate-900 text-xs truncate flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-eec-primary shrink-0" />
+                <span className="font-bold text-slate-900 text-sm truncate flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-eec-primary" />
                   {selectedEmployee.name}
                 </span>
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-[10px] font-bold bg-white text-slate-700 border border-slate-300">
+                <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-[11px] font-bold bg-white text-slate-700 border border-slate-300">
                   {selectedEmployee.employeeId}
                 </span>
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                  <ShieldCheck className="w-3 h-3" />
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
                   APPROVED
                 </span>
               </div>
 
               {/* Designation & Department */}
-              <div className="flex items-center gap-2 text-[11px] text-slate-600 flex-wrap">
-                <span className="flex items-center gap-1 font-medium text-slate-700">
-                  <Briefcase className="w-3 h-3 text-slate-400" />
-                  {selectedEmployee.designation || 'Staff Member'}
+              <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
+                <span className="flex items-center gap-1 text-slate-700 font-medium">
+                  <Briefcase className="w-3.5 h-3.5 text-slate-400" />
+                  {selectedEmployee.designation || 'Staff'}
                 </span>
                 <span className="text-slate-300">•</span>
-                <span className="flex items-center gap-1 text-slate-500 font-medium">
-                  <Building2 className="w-3 h-3 text-slate-400" />
-                  {selectedEmployee.departmentName || selectedEmployee.departmentCode || departmentName || 'Assigned Directorate'}
+                <span className="flex items-center gap-1 text-slate-600">
+                  <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                  {selectedEmployee.departmentName || (departmentName ? departmentName : 'Directorate')}
                 </span>
               </div>
+
+              {selectedEmployee.email && (
+                <div className="text-[11px] text-slate-500 font-mono">
+                  {selectedEmployee.email}
+                </div>
+              )}
             </div>
 
             <button
               type="button"
               onClick={handleClearSelection}
               disabled={disabled}
-              title="Change employee selection"
+              title="Clear selection and choose a different employee"
               className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors shrink-0"
-              aria-label="Clear employee selection"
+              aria-label="Clear selection"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -296,12 +312,8 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
               }}
               onFocus={() => setIsOpen(true)}
               onKeyDown={handleKeyDown}
-              placeholder={
-                eligibleEmployees.length === 0
-                  ? 'No approved employees in this directorate...'
-                  : placeholder
-              }
-              className={`w-full pl-9 pr-20 py-2.5 text-xs bg-white border rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-eec-primary/20 transition-all ${
+              placeholder={placeholder}
+              className={`w-full pl-9 pr-20 py-2.5 text-xs bg-slate-50 border rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-eec-primary/20 transition-all ${
                 error
                   ? 'border-rose-400 focus:border-rose-500 bg-rose-50/20'
                   : 'border-slate-200 focus:border-eec-primary'
@@ -356,7 +368,11 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
               {/* Header / stats bar */}
               <div className="px-3 py-2 bg-slate-50/90 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
                 <span>
-                  Approved Directorate Staff: <strong className="text-slate-700">{filteredEmployees.length}</strong>
+                  {selectedDepartmentId ? (
+                    <>Approved Directorate Staff: <strong className="text-slate-700">{filteredEmployees.length}</strong></>
+                  ) : (
+                    <>Eligible Personnel: <strong className="text-slate-700">{filteredEmployees.length}</strong></>
+                  )}
                 </span>
                 {searchQuery && (
                   <span className="text-slate-400 truncate max-w-[160px]">
@@ -378,9 +394,15 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
                 ) : eligibleEmployees.length === 0 ? (
                   <li className="p-6 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-1.5">
                     <AlertCircle className="w-6 h-6 text-amber-500" />
-                    <span className="font-semibold text-slate-700">No Approved Employees in Directorate</span>
+                    <span className="font-semibold text-slate-700">
+                      {selectedDepartmentId ? 'No Approved Employees in Directorate' : 'No Eligible Employees Found'}
+                    </span>
                     <span className="text-[11px] text-slate-400 max-w-xs text-center">
-                      There are no active, approved personnel in this directorate. Check User Approvals to activate accounts.
+                      {departmentName
+                        ? `No approved, active staff members found in ${departmentName}.`
+                        : selectedDepartmentId
+                        ? 'There are no active, approved personnel in this directorate. Check User Approvals to activate accounts.'
+                        : 'There are currently no active, approved personnel available in the directory.'}
                     </span>
                   </li>
                 ) : filteredEmployees.length === 0 ? (
@@ -388,7 +410,7 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
                     <AlertCircle className="w-6 h-6 text-amber-500" />
                     <span className="font-semibold text-slate-700">No Matching Employees</span>
                     <span className="text-[11px] text-slate-400 max-w-xs text-center">
-                      No approved employees in this directorate match "{searchQuery}". Try searching by name, ID, or designation.
+                      No approved employees match "{searchQuery}". Try searching by name, ID, designation, or department.
                     </span>
                   </li>
                 ) : (
@@ -418,25 +440,25 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
                               <User className="w-3 h-3 text-slate-500" />
                               {emp.name}
                             </span>
-                            <span className="inline-flex items-center px-1.5 py-0.2 rounded font-mono text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded font-mono text-[10px] font-bold bg-white text-slate-700 border border-slate-300">
                               {emp.employeeId}
                             </span>
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                              <ShieldCheck className="w-2.5 h-2.5" />
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">
+                              <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" />
                               APPROVED
                             </span>
                           </div>
 
-                          {/* Designation & Department */}
-                          <div className="flex items-center gap-2 text-[11px] text-slate-600 flex-wrap">
-                            <span className="flex items-center gap-1 font-medium text-slate-700">
+                          {/* Designation & Directorate line */}
+                          <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap font-medium">
+                            <span className="flex items-center gap-1 text-slate-700">
                               <Briefcase className="w-3 h-3 text-slate-400" />
-                              {emp.designation || 'Staff Member'}
+                              {emp.designation || 'Staff'}
                             </span>
                             <span className="text-slate-300">•</span>
-                            <span className="flex items-center gap-1 text-slate-500">
+                            <span className="flex items-center gap-1 text-slate-500 truncate">
                               <Building2 className="w-3 h-3 text-slate-400" />
-                              {emp.departmentName || emp.departmentCode || departmentName || 'Assigned Directorate'}
+                              {emp.departmentName || (departmentName ? departmentName : 'Directorate')}
                             </span>
                           </div>
                         </div>
@@ -460,4 +482,3 @@ export const EmployeeSearchCombobox: React.FC<EmployeeSearchComboboxProps> = ({
     </div>
   );
 };
-

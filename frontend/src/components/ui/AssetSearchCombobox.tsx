@@ -1,17 +1,19 @@
-import React, { useState, useRef, useEffect, useId } from 'react';
-import { Search, X, ChevronDown, Check, AlertCircle, Building2, User } from 'lucide-react';
+import React, { useState, useRef, useEffect, useId, useMemo } from 'react';
+import { Search, X, ChevronDown, Check, AlertCircle, Building2, User, MapPin } from 'lucide-react';
 import { Resource } from '../../types';
 
 export interface AssetSearchComboboxProps {
   resources: Resource[];
   selectedResourceId: string;
   onSelect: (resource: Resource | null) => void;
+  mode?: 'AVAILABLE' | 'ASSIGNED';
   isLoading?: boolean;
   disabled?: boolean;
   label?: string;
   required?: boolean;
   placeholder?: string;
-  error?: string;
+  error?: string | null;
+  className?: string;
 }
 
 /**
@@ -22,30 +24,69 @@ export function getAssetSerialNumber(r: Resource): string {
   if (r.itSpecs?.serialNumber && r.itSpecs.serialNumber.trim()) return r.itSpecs.serialNumber.trim();
   if (r.vehicleSpecs?.chassisNumber && r.vehicleSpecs.chassisNumber.trim()) return r.vehicleSpecs.chassisNumber.trim();
   if (r.surveyingSpecs?.serialNumber && r.surveyingSpecs.serialNumber.trim()) return r.surveyingSpecs.serialNumber.trim();
+  if (r.machinerySpecs?.serialNumber && r.machinerySpecs.serialNumber.trim()) return r.machinerySpecs.serialNumber.trim();
   return '';
 }
 
 /**
- * Searchable Combobox for Asset Selection in Return / Custody Workflows.
+ * Helper to safely extract model across polymorphic resource specs
+ */
+export function getAssetModel(r: Resource): string {
+  if ((r as any).model && typeof (r as any).model === 'string' && (r as any).model.trim()) {
+    return (r as any).model.trim();
+  }
+  if (r.itSpecs?.model && r.itSpecs.model.trim()) return r.itSpecs.model.trim();
+  if (r.vehicleSpecs?.model && r.vehicleSpecs.model.trim()) return r.vehicleSpecs.model.trim();
+  if (r.machinerySpecs?.model && r.machinerySpecs.model.trim()) return r.machinerySpecs.model.trim();
+  if (r.surveyingSpecs?.model && r.surveyingSpecs.model.trim()) return r.surveyingSpecs.model.trim();
+  return '';
+}
+
+/**
+ * Canonical human-friendly display names for EEC RMS categories
+ */
+export const CATEGORY_NAMES: Record<string, string> = {
+  IT_EQUIPMENT: 'IT Equipment',
+  VEHICLES: 'Vehicles & Transport',
+  HEAVY_MACHINERY: 'Heavy Machinery',
+  SURVEYING_GEOTECHNICAL: 'Surveying & Geotechnical',
+  CAMP_FACILITY_FURNITURE: 'Furniture & Facilities',
+  OTHER: 'Other Equipment',
+};
+
+export function formatCategoryName(cat?: string): string {
+  if (!cat) return 'Equipment';
+  return CATEGORY_NAMES[cat] || cat.replace(/_/g, ' ');
+}
+
+/**
+ * Searchable Combobox for Asset Selection in Return, Direct Assignment, and Custody Transfer Workflows.
  * 
  * Supports search by:
  * - Resource/Item Code (e.g. EEC-IT-2024-0012)
  * - Resource Name (e.g. Dell Latitude 5440)
  * - Serial Number (e.g. SN: ABC123, chassis number)
- * - Current Custodian's Full Name (e.g. Haile Gebrselassie)
- * - Employee ID (e.g. EEC-EMP-045)
- * - Department Name or Code
+ * - Model (e.g. Latitude 5440, Hilux D-4D)
+ * - Category (e.g. IT Equipment, Surveying)
+ * - Storage Location or Department
+ * - Current Custodian (for ASSIGNED mode)
+ * 
+ * Modes:
+ * - 'AVAILABLE': Only genuinely AVAILABLE resources (in store/inventory) can be selected.
+ * - 'ASSIGNED': Only genuinely ASSIGNED resources with active custody can be selected (default for returns & transfers).
  */
 export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
   resources,
   selectedResourceId,
   onSelect,
+  mode = 'ASSIGNED',
   isLoading = false,
   disabled = false,
   label = 'Select Currently Assigned Asset',
   required = false,
-  placeholder = 'Search by item code, name, serial number, or custodian...',
+  placeholder,
   error,
+  className = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,34 +98,53 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
   const comboboxId = useId();
 
   // Find currently selected resource object
-  const selectedResource = resources.find((r) => r.id === selectedResourceId) || null;
+  const selectedResource = useMemo(() => {
+    return resources.find((r) => r.id === selectedResourceId) || null;
+  }, [resources, selectedResourceId]);
 
-  // Filter only return-eligible resources (status === 'ASSIGNED')
-  const returnEligibleResources = resources.filter((r) => r.status === 'ASSIGNED');
+  // Filter eligible resources based on mode:
+  // - 'AVAILABLE': strictly r.status === 'AVAILABLE' (rejects ASSIGNED, MAINTENANCE, TESTING, RETIRED, DISPOSED)
+  // - 'ASSIGNED': strictly r.status === 'ASSIGNED' (rejects AVAILABLE, MAINTENANCE, RETIRED, DISPOSED)
+  const eligibleResources = useMemo(() => {
+    if (mode === 'AVAILABLE') {
+      return resources.filter((r) => r.status === 'AVAILABLE');
+    }
+    return resources.filter((r) => r.status === 'ASSIGNED');
+  }, [resources, mode]);
 
   // Filter based on search query
-  const filteredResources = returnEligibleResources.filter((r) => {
+  const filteredResources = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return true;
+    if (!q) return eligibleResources;
 
-    const itemCode = (r.itemCode || '').toLowerCase();
-    const name = (r.name || '').toLowerCase();
-    const serial = getAssetSerialNumber(r).toLowerCase();
-    const custodian = (r.currentAssigneeName || '').toLowerCase();
-    const empId = (r.currentAssigneeEmployeeId || '').toLowerCase();
-    const deptName = (r.currentDepartmentName || r.department?.name || '').toLowerCase();
-    const deptCode = (r.department?.code || '').toLowerCase();
+    return eligibleResources.filter((r) => {
+      const itemCode = (r.itemCode || '').toLowerCase();
+      const name = (r.name || '').toLowerCase();
+      const serial = getAssetSerialNumber(r).toLowerCase();
+      const model = getAssetModel(r).toLowerCase();
+      const category = (r.category || '').toLowerCase();
+      const categoryLabel = formatCategoryName(r.category).toLowerCase();
+      const custodian = (r.currentAssigneeName || '').toLowerCase();
+      const empId = (r.currentAssigneeEmployeeId || '').toLowerCase();
+      const deptName = (r.currentDepartmentName || r.department?.name || '').toLowerCase();
+      const deptCode = (r.department?.code || '').toLowerCase();
+      const location = (r.location || '').toLowerCase();
 
-    return (
-      itemCode.includes(q) ||
-      name.includes(q) ||
-      serial.includes(q) ||
-      custodian.includes(q) ||
-      empId.includes(q) ||
-      deptName.includes(q) ||
-      deptCode.includes(q)
-    );
-  });
+      return (
+        itemCode.includes(q) ||
+        name.includes(q) ||
+        serial.includes(q) ||
+        model.includes(q) ||
+        category.includes(q) ||
+        categoryLabel.includes(q) ||
+        custodian.includes(q) ||
+        empId.includes(q) ||
+        deptName.includes(q) ||
+        deptCode.includes(q) ||
+        location.includes(q)
+      );
+    });
+  }, [eligibleResources, searchQuery]);
 
   // Keep highlighted index within bounds
   useEffect(() => {
@@ -167,8 +227,14 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
     }
   };
 
+  const computedPlaceholder = placeholder || (
+    mode === 'AVAILABLE'
+      ? 'Search by item code, name, serial number, model, or category...'
+      : 'Search by item code, name, serial number, model, or custodian...'
+  );
+
   return (
-    <div className="space-y-1.5" ref={containerRef}>
+    <div className={`space-y-1.5 ${className}`} ref={containerRef}>
       {label && (
         <div className="flex items-center justify-between">
           <label
@@ -203,42 +269,72 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
                 <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-[11px] font-bold bg-white text-slate-700 border border-slate-300">
                   {selectedResource.itemCode}
                 </span>
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                  ASSIGNED
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-200/70 text-slate-700">
+                  {formatCategoryName(selectedResource.category)}
                 </span>
+                {selectedResource.status === 'AVAILABLE' ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                    AVAILABLE
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                    ASSIGNED
+                  </span>
+                )}
               </div>
 
-              {/* Identification line */}
+              {/* Identification line: SN, Model, Location / Department */}
               <div className="flex items-center gap-2 text-xs text-slate-600 flex-wrap">
                 {getAssetSerialNumber(selectedResource) && (
                   <span className="font-mono text-slate-700 font-medium">
                     SN: {getAssetSerialNumber(selectedResource)}
                   </span>
                 )}
-                {getAssetSerialNumber(selectedResource) && (
+                {getAssetModel(selectedResource) && (
+                  <>
+                    {getAssetSerialNumber(selectedResource) && (
+                      <span className="text-slate-300">•</span>
+                    )}
+                    <span className="text-slate-700 font-medium">
+                      Model: {getAssetModel(selectedResource)}
+                    </span>
+                  </>
+                )}
+                {(getAssetSerialNumber(selectedResource) || getAssetModel(selectedResource)) && (
                   <span className="text-slate-300">•</span>
                 )}
                 <span className="flex items-center gap-1 text-slate-600">
-                  <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                  {selectedResource.currentDepartmentName || selectedResource.department?.name || 'Central Office'}
+                  {selectedResource.status === 'AVAILABLE' ? (
+                    <>
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{selectedResource.location || selectedResource.department?.name || 'Central Store - Kersa'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{selectedResource.currentDepartmentName || selectedResource.department?.name || 'Central Office'}</span>
+                    </>
+                  )}
                 </span>
               </div>
 
-              {/* Custodian line */}
-              <div className="flex items-center gap-1 text-xs text-eec-primary font-medium pt-0.5">
-                <User className="w-3.5 h-3.5 text-eec-primary shrink-0" />
-                <span>
-                  Currently assigned to:{' '}
-                  <strong className="text-slate-900 font-bold">
-                    {selectedResource.currentAssigneeName || 'Unknown Custodian'}
-                  </strong>
-                  {selectedResource.currentAssigneeEmployeeId ? (
-                    <span className="text-slate-600 font-mono ml-1 font-semibold">
-                      ({selectedResource.currentAssigneeEmployeeId})
-                    </span>
-                  ) : null}
-                </span>
-              </div>
+              {/* Custodian line for ASSIGNED assets */}
+              {selectedResource.status === 'ASSIGNED' && (
+                <div className="flex items-center gap-1 text-xs text-eec-primary font-medium pt-0.5">
+                  <User className="w-3.5 h-3.5 text-eec-primary shrink-0" />
+                  <span>
+                    Currently assigned to:{' '}
+                    <strong className="text-slate-900 font-bold">
+                      {selectedResource.currentAssigneeName || 'Unknown Custodian'}
+                    </strong>
+                    {selectedResource.currentAssigneeEmployeeId ? (
+                      <span className="text-slate-600 font-mono ml-1 font-semibold">
+                        ({selectedResource.currentAssigneeEmployeeId})
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              )}
             </div>
 
             <button
@@ -274,7 +370,7 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
               }}
               onFocus={() => setIsOpen(true)}
               onKeyDown={handleKeyDown}
-              placeholder={placeholder}
+              placeholder={computedPlaceholder}
               className={`w-full pl-9 pr-20 py-2.5 text-xs bg-slate-50 border rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-eec-primary/20 transition-all ${
                 error
                   ? 'border-rose-400 focus:border-rose-500 bg-rose-50/20'
@@ -330,9 +426,9 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
               {/* Header / stats bar */}
               <div className="px-3 py-2 bg-slate-50/90 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-500 font-medium">
                 <span>
-                  {filteredResources.length === 1
-                    ? '1 return-eligible asset'
-                    : `${filteredResources.length} return-eligible assets`}
+                  {mode === 'AVAILABLE'
+                    ? (filteredResources.length === 1 ? '1 available asset in store' : `${filteredResources.length} available assets in store`)
+                    : (filteredResources.length === 1 ? '1 asset in active custody' : `${filteredResources.length} assets in active custody`)}
                 </span>
                 {searchQuery && (
                   <span className="text-slate-400 truncate max-w-[160px]">
@@ -349,14 +445,18 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
                 {isLoading ? (
                   <li className="p-6 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
                     <div className="w-5 h-5 border-2 border-eec-primary border-t-transparent rounded-full animate-spin" />
-                    <span>Loading assigned assets...</span>
+                    <span>Loading assets...</span>
                   </li>
-                ) : returnEligibleResources.length === 0 ? (
+                ) : eligibleResources.length === 0 ? (
                   <li className="p-6 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-1.5">
                     <AlertCircle className="w-6 h-6 text-slate-400" />
-                    <span className="font-semibold text-slate-700">No Returnable Assets</span>
+                    <span className="font-semibold text-slate-700">
+                      {mode === 'AVAILABLE' ? 'No Available Assets' : 'No Assigned Assets'}
+                    </span>
                     <span className="text-[11px] text-slate-400">
-                      There are currently no assets assigned to any employee in the registry.
+                      {mode === 'AVAILABLE'
+                        ? 'There are currently no assets marked AVAILABLE in store inventory.'
+                        : 'There are currently no assets assigned to any employee in the registry.'}
                     </span>
                   </li>
                 ) : filteredResources.length === 0 ? (
@@ -364,7 +464,7 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
                     <AlertCircle className="w-6 h-6 text-amber-500" />
                     <span className="font-semibold text-slate-700">No Matching Assets</span>
                     <span className="text-[11px] text-slate-400">
-                      No assigned assets match "{searchQuery}". Try searching by item code, serial number, or employee name.
+                      No assets match "{searchQuery}". Try searching by item code, name, serial number, model, or category.
                     </span>
                   </li>
                 ) : (
@@ -372,6 +472,7 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
                     const isSelected = resource.id === selectedResourceId;
                     const isHighlighted = index === highlightedIndex;
                     const serial = getAssetSerialNumber(resource);
+                    const model = getAssetModel(resource);
                     const deptName =
                       resource.currentDepartmentName ||
                       resource.department?.name ||
@@ -396,14 +497,26 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
                         }`}
                       >
                         <div className="space-y-0.5 flex-1 min-w-0">
-                          {/* Line 1: Resource Name */}
-                          <div className="flex items-center gap-2">
+                          {/* Line 1: Resource Name & Category */}
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-slate-900 text-xs truncate">
                               {resource.name}
                             </span>
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-slate-200/70 text-slate-700">
+                              {formatCategoryName(resource.category)}
+                            </span>
+                            {resource.status === 'AVAILABLE' ? (
+                              <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">
+                                AVAILABLE
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-100 text-blue-800">
+                                ASSIGNED
+                              </span>
+                            )}
                           </div>
 
-                          {/* Line 2: Item Code | SN: serial • Department */}
+                          {/* Line 2: Item Code | SN: serial | Model: model */}
                           <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap font-medium">
                             <span className="font-mono text-slate-700 font-semibold">
                               {resource.itemCode}
@@ -416,25 +529,40 @@ export const AssetSearchCombobox: React.FC<AssetSearchComboboxProps> = ({
                                 </span>
                               </>
                             ) : null}
-                            <span className="text-slate-300">•</span>
-                            <span className="text-slate-500 truncate">{deptName}</span>
+                            {model ? (
+                              <>
+                                <span className="text-slate-300">•</span>
+                                <span className="text-slate-600 font-medium">
+                                  Model: {model}
+                                </span>
+                              </>
+                            ) : null}
                           </div>
 
-                          {/* Line 3: Currently assigned to: Custodian Name (Emp ID) */}
-                          <div className="text-[11px] text-eec-primary font-medium flex items-center gap-1 pt-0.5">
-                            <User className="w-3 h-3 text-eec-primary shrink-0" />
-                            <span>
-                              Currently assigned to:{' '}
-                              <strong className="font-bold text-slate-800">
-                                {custodianName}
-                              </strong>
-                              {custodianEmpId ? (
-                                <span className="text-slate-500 font-mono ml-1 font-semibold">
-                                  ({custodianEmpId})
-                                </span>
-                              ) : null}
-                            </span>
-                          </div>
+                          {/* Line 3: Details based on mode */}
+                          {resource.status === 'AVAILABLE' ? (
+                            <div className="text-[11px] text-slate-600 flex items-center gap-1 pt-0.5">
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate">
+                                Location: <strong className="text-slate-700">{resource.location || deptName || 'Central Store - Kersa'}</strong>
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-eec-primary font-medium flex items-center gap-1 pt-0.5">
+                              <User className="w-3 h-3 text-eec-primary shrink-0" />
+                              <span>
+                                Currently assigned to:{' '}
+                                <strong className="font-bold text-slate-800">
+                                  {custodianName}
+                                </strong>
+                                {custodianEmpId ? (
+                                  <span className="text-slate-500 font-mono ml-1 font-semibold">
+                                    ({custodianEmpId})
+                                  </span>
+                                ) : null}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {isSelected && (

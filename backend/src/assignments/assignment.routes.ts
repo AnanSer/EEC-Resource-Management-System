@@ -688,7 +688,7 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       }),
       prisma.employee.findUnique({
         where: { id: employeeId },
-        include: { department: true },
+        include: { department: true, user: true },
       }),
     ]);
 
@@ -714,11 +714,27 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       });
     }
 
+    // Validate employee user account status is APPROVED (rejects PENDING, REJECTED, SUSPENDED)
+    if (employee.user && employee.user.status !== 'APPROVED') {
+      return res.status(400).json({
+        success: false,
+        message: `Employee account is ${employee.user.status}. Only APPROVED employees can receive equipment assignments.`,
+      });
+    }
+
     // Validate resource status is AVAILABLE
     if (resource.status !== 'AVAILABLE') {
       return res.status(400).json({
         success: false,
         message: `Resource '${resource.itemCode}' is currently '${resource.status}' and cannot be assigned. Only AVAILABLE resources can be assigned.`,
+      });
+    }
+
+    // Validate resource is not already held by an active custodian
+    if (resource.currentAssigneeId) {
+      return res.status(400).json({
+        success: false,
+        message: `Resource '${resource.itemCode}' already has an active custodian and cannot be directly assigned. Use Custody Transfer instead.`,
       });
     }
 
@@ -980,6 +996,14 @@ router.post('/transfer', requireAuth, async (req: AppRequest, res: AppResponse) 
       });
     }
 
+    // Validate active custody integrity
+    if (resource.currentAssigneeId && resource.currentAssigneeId !== currentAssignment.employeeId) {
+      return res.status(400).json({
+        success: false,
+        message: `Custody integrity error: Resource recorded custodian does not match active assignment record.`,
+      });
+    }
+
     if (currentAssignment.employeeId === toEmployeeId) {
       return res.status(400).json({
         success: false,
@@ -990,7 +1014,7 @@ router.post('/transfer', requireAuth, async (req: AppRequest, res: AppResponse) 
     // Fetch target employee
     const toEmployee = await prisma.employee.findUnique({
       where: { id: toEmployeeId },
-      include: { department: true },
+      include: { department: true, user: true },
     });
 
     if (!toEmployee) {
@@ -1004,6 +1028,14 @@ router.post('/transfer', requireAuth, async (req: AppRequest, res: AppResponse) 
       return res.status(400).json({
         success: false,
         message: `Target employee '${toEmployee.name}' (${toEmployee.employeeId}) is currently marked inactive and cannot receive asset custody`,
+      });
+    }
+
+    // Validate target employee user account status is APPROVED (rejects PENDING, REJECTED, SUSPENDED)
+    if (toEmployee.user && toEmployee.user.status !== 'APPROVED') {
+      return res.status(400).json({
+        success: false,
+        message: `Target employee account is ${toEmployee.user.status}. Only APPROVED employees can receive asset custody transfers.`,
       });
     }
 

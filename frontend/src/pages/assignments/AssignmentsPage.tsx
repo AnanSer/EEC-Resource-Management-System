@@ -6,6 +6,8 @@ import { employeeService } from '../../services/employeeService';
 import { AssetAssignment, Resource, Employee, ResourceCondition } from '../../types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Modal } from '../../components/ui/Modal';
+import { AssetSearchCombobox } from '../../components/ui/AssetSearchCombobox';
+import { EmployeeSearchCombobox } from '../../components/ui/EmployeeSearchCombobox';
 import { 
   ArrowLeftRight, 
   Plus, 
@@ -80,23 +82,6 @@ export const AssignmentsPage: React.FC = () => {
       setAvailableResources(avail);
       setAssignedResources(assigned);
       setEmployees(eligibleEmps);
-
-      if (avail.length > 0 && !selectedResourceId) {
-        setSelectedResourceId(avail[0].id);
-      }
-      if (assigned.length > 0 && !transferResourceId) {
-        setTransferResourceId(assigned[0].id);
-        const other = eligibleEmps.filter(e => e.id !== assigned[0].currentAssigneeId);
-        if (other.length > 0) setTransferNewEmpId(other[0].id);
-      }
-      if (assigned.length > 0 && !returnResourceId) {
-        setReturnResourceId(assigned[0].id);
-        setReturnCondition(assigned[0].condition);
-        setReturnLocation(assigned[0].location || 'Central Store - Kersa');
-      }
-      if (eligibleEmps.length > 0 && !selectedEmpId) {
-        setSelectedEmpId(eligibleEmps[0].id);
-      }
     } catch (err) {
       console.error('[AssignmentsPage Error]', err);
     } finally {
@@ -110,6 +95,10 @@ export const AssignmentsPage: React.FC = () => {
 
   const handleDirectAssign = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedResourceId || !selectedEmpId) {
+      setAssignError('Please select both an available asset and an assignee employee.');
+      return;
+    }
     setAssigning(true);
     setAssignError(null);
     try {
@@ -122,7 +111,10 @@ export const AssignmentsPage: React.FC = () => {
         assignedBy: `${currentUser?.name || 'Authorized Officer'} (${currentRole})`
       });
       setIsAssignModalOpen(false);
+      setSelectedResourceId('');
+      setSelectedEmpId('');
       setPurpose('');
+      setExpectedReturnDate('');
       setAssignNotes('');
       setToastMessage('Resource assigned successfully and marked in field custody');
       setTimeout(() => setToastMessage(null), 3500);
@@ -136,6 +128,10 @@ export const AssignmentsPage: React.FC = () => {
 
   const handleTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!transferResourceId || !transferNewEmpId) {
+      setTransferError('Please select both the assigned asset and the target custodian.');
+      return;
+    }
     setTransferring(true);
     setTransferError(null);
     try {
@@ -147,6 +143,8 @@ export const AssignmentsPage: React.FC = () => {
         transferredBy: `${currentUser?.name || 'Authorized Officer'} (${currentRole})`
       });
       setIsTransferModalOpen(false);
+      setTransferResourceId('');
+      setTransferNewEmpId('');
       setTransferNotes('');
       setTransferReason('');
       setToastMessage('Custody transferred and previous assignment closed');
@@ -185,9 +183,9 @@ export const AssignmentsPage: React.FC = () => {
   const openTransferModalForResource = (resId: string) => {
     setTransferResourceId(resId);
     setTransferError(null);
-    const item = assignedResources.find(r => r.id === resId);
-    const other = employees.filter(e => e.id !== item?.currentAssigneeId);
-    if (other.length > 0) setTransferNewEmpId(other[0].id);
+    setTransferNewEmpId('');
+    setTransferReason('');
+    setTransferNotes('');
     setIsTransferModalOpen(true);
   };
 
@@ -250,9 +248,12 @@ export const AssignmentsPage: React.FC = () => {
 
             <button
               onClick={() => {
-                if (assignedResources.length > 0) {
-                  openTransferModalForResource(assignedResources[0].id);
-                }
+                setTransferError(null);
+                setTransferResourceId('');
+                setTransferNewEmpId('');
+                setTransferReason('');
+                setTransferNotes('');
+                setIsTransferModalOpen(true);
               }}
               disabled={assignedResources.length === 0}
               className="inline-flex items-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition-colors disabled:opacity-50"
@@ -264,9 +265,11 @@ export const AssignmentsPage: React.FC = () => {
             <button
               onClick={() => {
                 setAssignError(null);
-                if (availableResources.length > 0 && !selectedResourceId) {
-                  setSelectedResourceId(availableResources[0].id);
-                }
+                setSelectedResourceId('');
+                setSelectedEmpId('');
+                setPurpose('');
+                setExpectedReturnDate('');
+                setAssignNotes('');
                 setIsAssignModalOpen(true);
               }}
               disabled={availableResources.length === 0}
@@ -451,44 +454,35 @@ export const AssignmentsPage: React.FC = () => {
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-              Select Available Asset *
-            </label>
-            <select
-              value={selectedResourceId}
-              onChange={(e) => setSelectedResourceId(e.target.value)}
-              required
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
-            >
-              {availableResources.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.itemCode} • {r.name} ({r.category})
-                </option>
-              ))}
-            </select>
-            {availableResources.length === 0 && (
-              <p className="text-[11px] text-amber-600 mt-1">No AVAILABLE assets currently in store.</p>
-            )}
-          </div>
+          <AssetSearchCombobox
+            label="Select Available Asset"
+            required
+            mode="AVAILABLE"
+            resources={availableResources}
+            selectedResourceId={selectedResourceId}
+            isLoading={loading}
+            placeholder="Search available assets by item code, name, serial number, or model..."
+            error={assignError && !selectedResourceId ? 'Please select an available asset' : undefined}
+            onSelect={(resource) => {
+              setSelectedResourceId(resource ? resource.id : '');
+              setAssignError(null);
+            }}
+          />
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-              Assignee Employee *
-            </label>
-            <select
-              value={selectedEmpId}
-              onChange={(e) => setSelectedEmpId(e.target.value)}
-              required
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
-            >
-              {employees.map(e => (
-                <option key={e.id} value={e.id}>
-                  {e.name} • {e.departmentName} ({e.designation})
-                </option>
-              ))}
-            </select>
-          </div>
+          <EmployeeSearchCombobox
+            label="Assignee Employee"
+            required
+            employees={employees}
+            selectedEmployeeId={selectedEmpId}
+            selectedDepartmentId={currentRole === 'DEPARTMENT_MANAGER' ? (currentUser?.departmentId || undefined) : undefined}
+            isLoading={loading}
+            placeholder="Search eligible employees by name, ID, designation, or department..."
+            error={assignError && !selectedEmpId ? 'Please select an assignee employee' : undefined}
+            onSelect={(employee) => {
+              setSelectedEmpId(employee ? employee.id : '');
+              setAssignError(null);
+            }}
+          />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
@@ -539,7 +533,7 @@ export const AssignmentsPage: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={assigning || availableResources.length === 0}
+              disabled={assigning || !selectedResourceId || !selectedEmpId}
               className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm disabled:opacity-50"
             >
               {assigning ? 'Assigning...' : 'Confirm Assignment'}
@@ -563,47 +557,37 @@ export const AssignmentsPage: React.FC = () => {
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-              Select Currently Assigned Asset *
-            </label>
-            <select
-              value={transferResourceId}
-              onChange={(e) => {
-                const rid = e.target.value;
-                setTransferResourceId(rid);
-                const item = assignedResources.find(r => r.id === rid);
-                const other = employees.filter(emp => emp.id !== item?.currentAssigneeId);
-                if (other.length > 0) setTransferNewEmpId(other[0].id);
-              }}
-              required
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
-            >
-              {assignedResources.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.itemCode} • {r.name} (Held by: {r.currentAssigneeName || 'Assigned'})
-                </option>
-              ))}
-            </select>
-          </div>
+          <AssetSearchCombobox
+            label="Select Currently Assigned Asset"
+            required
+            mode="ASSIGNED"
+            resources={assignedResources}
+            selectedResourceId={transferResourceId}
+            isLoading={loading}
+            placeholder="Search active assigned assets by item code, name, serial number, model, or custodian..."
+            error={transferError && !transferResourceId ? 'Please select an assigned asset to transfer' : undefined}
+            onSelect={(resource) => {
+              setTransferResourceId(resource ? resource.id : '');
+              setTransferNewEmpId(''); // Clear new custodian to avoid self-custody or stale selection
+              setTransferError(null);
+            }}
+          />
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-              Transfer To New Custodian *
-            </label>
-            <select
-              value={transferNewEmpId}
-              onChange={(e) => setTransferNewEmpId(e.target.value)}
-              required
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
-            >
-              {employees.map(e => (
-                <option key={e.id} value={e.id}>
-                  {e.name} • {e.departmentName} ({e.designation})
-                </option>
-              ))}
-            </select>
-          </div>
+          <EmployeeSearchCombobox
+            label="Transfer To New Custodian"
+            required
+            employees={employees}
+            selectedEmployeeId={transferNewEmpId}
+            excludeEmployeeId={assignedResources.find(r => r.id === transferResourceId)?.currentAssigneeId}
+            selectedDepartmentId={currentRole === 'DEPARTMENT_MANAGER' ? (currentUser?.departmentId || undefined) : undefined}
+            isLoading={loading}
+            placeholder="Search eligible new custodian by name, ID, designation, or department..."
+            error={transferError && !transferNewEmpId ? 'Please select a new custodian' : undefined}
+            onSelect={(employee) => {
+              setTransferNewEmpId(employee ? employee.id : '');
+              setTransferError(null);
+            }}
+          />
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
@@ -642,7 +626,7 @@ export const AssignmentsPage: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={transferring}
+              disabled={transferring || !transferResourceId || !transferNewEmpId}
               className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm disabled:opacity-50"
             >
               {transferring ? 'Transferring...' : 'Execute Custody Transfer'}
