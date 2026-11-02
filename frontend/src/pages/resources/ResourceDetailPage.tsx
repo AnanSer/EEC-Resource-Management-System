@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { resourceService } from '../../services/resourceService';
+import { departmentService } from '../../services/departmentService';
 import { assignmentService, ResourceCustodyHistory } from '../../services/assignmentService';
-import { Resource, ResourceStatus } from '../../types';
+import { Resource, ResourceStatus, ResourceCategory, ResourceCondition, Department } from '../../types';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { CategoryBadge } from '../../components/ui/CategoryBadge';
 import { Modal } from '../../components/ui/Modal';
@@ -23,7 +24,15 @@ import {
   Trash2,
   ShieldAlert,
   Clock,
-  Wrench
+  Wrench,
+  Pencil,
+  SlidersHorizontal,
+  Info,
+  Layers,
+  Cpu,
+  Car,
+  Armchair,
+  ShieldCheck
 } from 'lucide-react';
 
 export const ResourceDetailPage: React.FC = () => {
@@ -41,6 +50,62 @@ export const ResourceDetailPage: React.FC = () => {
   const [savingStatus, setSavingStatus] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
 
+  // Edit Resource Details Modal
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Edit fields
+  const [editCategory, setEditCategory] = useState<ResourceCategory>('IT_EQUIPMENT');
+  const [editName, setEditName] = useState('');
+  const [editSubcategory, setEditSubcategory] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editDepartmentId, setEditDepartmentId] = useState('');
+  const [editCostETB, setEditCostETB] = useState<number | ''>('');
+  const [editCondition, setEditCondition] = useState<ResourceCondition>('EXCELLENT');
+  const [editPurchaseDate, setEditPurchaseDate] = useState('');
+  const [editWarrantyExpiry, setEditWarrantyExpiry] = useState('');
+  const [editManufacturer, setEditManufacturer] = useState('');
+  const [editModel, setEditModel] = useState('');
+  const [editSerialNumber, setEditSerialNumber] = useState('');
+  const [editSupplier, setEditSupplier] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+
+  // Category-specific edit fields
+  // IT Equipment
+  const [editItType, setEditItType] = useState('Laptop');
+  const [editItOs, setEditItOs] = useState('Windows 11 Pro');
+  const [editItProcessor, setEditItProcessor] = useState('');
+  const [editItRam, setEditItRam] = useState('');
+  const [editItStorage, setEditItStorage] = useState('');
+
+  // Vehicles
+  const [editVehType, setEditVehType] = useState('Pickup 4x4');
+  const [editPlateNumber, setEditPlateNumber] = useState('');
+  const [editChassisNumber, setEditChassisNumber] = useState('');
+  const [editEngineNumber, setEditEngineNumber] = useState('');
+  const [editFuelType, setEditFuelType] = useState<'DIESEL' | 'PETROL' | 'HYBRID' | 'ELECTRIC'>('DIESEL');
+  const [editMileage, setEditMileage] = useState('');
+
+  // Heavy Machinery
+  const [editMachType, setEditMachType] = useState('');
+  const [editMachCapacity, setEditMachCapacity] = useState('');
+  const [editOperatingHours, setEditOperatingHours] = useState('');
+
+  // Surveying / Lab
+  const [editSurvType, setEditSurvType] = useState('');
+  const [editAccuracyGrade, setEditAccuracyGrade] = useState('');
+  const [editCalibrationCert, setEditCalibrationCert] = useState('');
+  const [editNextCalibrationDue, setEditNextCalibrationDue] = useState('');
+
+  // Furniture / Site
+  const [editFurnType, setEditFurnType] = useState('');
+  const [editFurnMaterial, setEditFurnMaterial] = useState('');
+  const [editFurnDimensions, setEditFurnDimensions] = useState('');
+  const [editFurnColor, setEditFurnColor] = useState('');
+
   // Admin Delete Modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -50,6 +115,181 @@ export const ResourceDetailPage: React.FC = () => {
 
   // Success Feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    departmentService.getAll().then(setDepartments).catch(() => {});
+  }, []);
+
+  const openEditModal = () => {
+    if (!resource) return;
+    setEditError(null);
+    setEditName(resource.name || '');
+    setEditCategory(resource.category || 'IT_EQUIPMENT');
+    setEditSubcategory(resource.subcategory || '');
+    setEditLocation(resource.location || '');
+    setEditDepartmentId(resource.departmentId || resource.currentDepartmentId || '');
+    setEditCostETB(resource.purchaseCostETB ?? '');
+    setEditCondition(resource.condition || 'EXCELLENT');
+    setEditPurchaseDate(resource.purchaseDate ? resource.purchaseDate.split('T')[0] : '');
+    setEditWarrantyExpiry(resource.warrantyExpiry ? resource.warrantyExpiry.split('T')[0] : '');
+    setEditManufacturer(resource.manufacturer || '');
+    setEditModel(resource.model || '');
+    setEditSerialNumber(resource.serialNumber || '');
+    setEditSupplier(resource.supplier || '');
+    setEditDescription(resource.description || '');
+    setEditNotes(resource.notes || '');
+
+    // Category-specific specs
+    const specs: any = resource.specs || {};
+    const it: any = resource.itSpecs || specs;
+    setEditItType(it.computerType || 'Laptop');
+    setEditItOs(it.os || 'Windows 11 Pro');
+    setEditItProcessor(it.processor || '');
+    setEditItRam(it.ramGb !== undefined && it.ramGb !== null ? String(it.ramGb) : '');
+    setEditItStorage(it.storage || (it.storageGb ? `${it.storageGb}GB` : ''));
+
+    const veh: any = resource.vehicleSpecs || specs;
+    setEditVehType(veh.vehicleType || 'Pickup 4x4');
+    setEditPlateNumber(veh.plateNumber || '');
+    setEditChassisNumber(veh.chassisNumber || '');
+    setEditEngineNumber(veh.engineNumber || '');
+    setEditFuelType(veh.fuelType || 'DIESEL');
+    setEditMileage(veh.currentMileageKm !== undefined && veh.currentMileageKm !== null ? String(veh.currentMileageKm) : '');
+
+    const mach: any = resource.machinerySpecs || specs;
+    setEditMachType(mach.machineType || '');
+    setEditMachCapacity(mach.capacity || '');
+    setEditOperatingHours(mach.operatingHours !== undefined && mach.operatingHours !== null ? String(mach.operatingHours) : '');
+
+    const surv: any = resource.surveyingSpecs || specs;
+    setEditSurvType(surv.equipmentType || '');
+    setEditAccuracyGrade(surv.accuracyGrade || '');
+    setEditCalibrationCert(surv.calibrationCertificateNumber || '');
+    setEditNextCalibrationDue(surv.nextCalibrationDue ? surv.nextCalibrationDue.split('T')[0] : '');
+
+    const furn: any = resource.furnitureSpecs || specs;
+    setEditFurnType(furn.itemType || '');
+    setEditFurnMaterial(furn.material || '');
+    setEditFurnDimensions(furn.dimensions || '');
+    setEditFurnColor(furn.color || '');
+
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resource) return;
+    setSavingEdit(true);
+    setEditError(null);
+    try {
+      // Build category-specific specs flexibly
+      let itSpecs = undefined;
+      if (editCategory === 'IT_EQUIPMENT') {
+        itSpecs = {
+          serialNumber: editSerialNumber.trim() || undefined,
+          computerType: editItType || undefined,
+          brand: editManufacturer.trim() || undefined,
+          model: editModel.trim() || undefined,
+          os: editItOs.trim() || undefined,
+          processor: editItProcessor.trim() || undefined,
+          ramGb: editItRam ? parseInt(editItRam, 10) || undefined : undefined,
+          storageGb: editItStorage ? parseInt(editItStorage, 10) || undefined : undefined,
+          storage: editItStorage.trim() || undefined,
+        };
+      }
+
+      let vehicleSpecs = undefined;
+      if (editCategory === 'VEHICLES') {
+        vehicleSpecs = {
+          plateNumber: editPlateNumber.trim() || undefined,
+          chassisNumber: editChassisNumber.trim() || editSerialNumber.trim() || undefined,
+          engineNumber: editEngineNumber.trim() || undefined,
+          make: editManufacturer.trim() || undefined,
+          model: editModel.trim() || undefined,
+          vehicleType: editVehType || undefined,
+          fuelType: editFuelType,
+          currentMileageKm: editMileage ? Number(editMileage) || 0 : 0,
+        };
+      }
+
+      let machinerySpecs = undefined;
+      if (editCategory === 'HEAVY_MACHINERY') {
+        machinerySpecs = {
+          machineType: editMachType.trim() || undefined,
+          make: editManufacturer.trim() || undefined,
+          model: editModel.trim() || undefined,
+          serialNumber: editSerialNumber.trim() || undefined,
+          capacity: editMachCapacity.trim() || undefined,
+          operatingHours: editOperatingHours ? Number(editOperatingHours) || 0 : 0,
+        };
+      }
+
+      let surveyingSpecs = undefined;
+      if (editCategory === 'SURVEYING_GEOTECHNICAL') {
+        surveyingSpecs = {
+          equipmentType: editSurvType.trim() || undefined,
+          make: editManufacturer.trim() || undefined,
+          model: editModel.trim() || undefined,
+          serialNumber: editSerialNumber.trim() || undefined,
+          accuracyGrade: editAccuracyGrade.trim() || undefined,
+          calibrationCertificateNumber: editCalibrationCert.trim() || undefined,
+          nextCalibrationDue: editNextCalibrationDue || undefined,
+        };
+      }
+
+      let furnitureSpecs = undefined;
+      if (editCategory === 'CAMP_FACILITY_FURNITURE') {
+        furnitureSpecs = {
+          itemType: editFurnType.trim() || undefined,
+          material: editFurnMaterial.trim() || undefined,
+          dimensions: editFurnDimensions.trim() || undefined,
+          color: editFurnColor.trim() || undefined,
+        };
+      }
+
+      const updated = await resourceService.update(resource.id, {
+        name: editName.trim(),
+        category: editCategory,
+        subcategory: editSubcategory.trim() || undefined,
+        location: editLocation.trim() || undefined,
+        departmentId: editDepartmentId || undefined,
+        currentDepartmentId: editDepartmentId || undefined,
+        condition: editCondition,
+        purchaseDate: editPurchaseDate || undefined,
+        purchaseCostETB: editCostETB !== '' ? Number(editCostETB) : 0,
+        warrantyExpiry: editWarrantyExpiry || undefined,
+        manufacturer: editManufacturer.trim() || undefined,
+        model: editModel.trim() || undefined,
+        serialNumber: editSerialNumber.trim() || undefined,
+        supplier: editSupplier.trim() || undefined,
+        description: editDescription.trim() || undefined,
+        notes: editNotes.trim() || undefined,
+        itSpecs,
+        vehicleSpecs,
+        machinerySpecs,
+        surveyingSpecs,
+        furnitureSpecs,
+      } as any);
+
+      if (updated) {
+        setResource(updated);
+        setIsEditModalOpen(false);
+        setToastMessage(`Successfully updated details for ${updated.itemCode}`);
+        setTimeout(() => setToastMessage(null), 3500);
+
+        // Refresh resource from backend to pull updated relations (e.g. department)
+        const refreshed = await resourceService.getById(resource.id);
+        if (refreshed) {
+          setResource(refreshed);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to update resource details', err);
+      setEditError(err.response?.data?.message || err.message || 'Failed to update resource details');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   useEffect(() => {
     async function loadResource() {
@@ -300,15 +540,28 @@ export const ResourceDetailPage: React.FC = () => {
               </div>
             ) : (
               <>
+                {(currentRole === 'ADMIN' || currentRole === 'STORE_KEEPER' || (currentRole === 'DEPARTMENT_MANAGER' && resource.currentDepartmentId === currentUser?.departmentId)) && (
+                  <button
+                    type="button"
+                    onClick={openEditModal}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white text-xs font-bold rounded-xl transition-all shadow-sm"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Edit Resource Details
+                  </button>
+                )}
+
                 {(currentRole === 'ADMIN' || currentRole === 'STORE_KEEPER' || (currentRole === 'DEPARTMENT_MANAGER' && (!resource.currentDepartmentId || resource.currentDepartmentId === currentUser?.departmentId))) && (
                   <button
+                    type="button"
                     onClick={() => {
                       setStatusError(null);
                       setIsStatusModalOpen(true);
                     }}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-colors"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-colors shadow-sm"
                   >
-                    Update Custody / Status
+                    <SlidersHorizontal className="w-3.5 h-3.5" />
+                    Update Status
                   </button>
                 )}
 
@@ -710,11 +963,611 @@ export const ResourceDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Custody / Status Update Modal */}
+      {/* Edit Resource Details Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        title="Edit Resource Details"
+        subtitle={`Update asset specifications, ownership, and information for ${resource.itemCode}`}
+        maxWidth="max-w-3xl"
+      >
+        <form onSubmit={handleSaveEdit} className="space-y-4">
+          {editError && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-500 mt-0.5 shrink-0" />
+              <span className="leading-relaxed">{editError}</span>
+            </div>
+          )}
+
+          {/* Identifier Info Banner */}
+          <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-700">Permanent Asset Code:</span>
+              <span className="font-mono font-bold text-eec-primary bg-white px-2 py-0.5 rounded border border-slate-200">
+                {resource.itemCode}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-500">
+              Operational Status: <strong className="text-slate-800 font-bold">{resource.status}</strong>
+            </div>
+          </div>
+
+          {/* 1. Classification & Basic Identification */}
+          <div className="space-y-3 pt-1">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-100 text-xs font-bold text-slate-800 uppercase tracking-wider">
+              <Layers className="w-3.5 h-3.5 text-eec-primary" />
+              1. Classification & Identification
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Asset Category *
+                </label>
+                <select
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value as ResourceCategory)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-eec-accent/30"
+                >
+                  <option value="IT_EQUIPMENT">IT Equipment</option>
+                  <option value="VEHICLES">Vehicles & Transport</option>
+                  <option value="HEAVY_MACHINERY">Heavy Machinery</option>
+                  <option value="SURVEYING_GEOTECHNICAL">Surveying & Geotechnical</option>
+                  <option value="CAMP_FACILITY_FURNITURE">Furniture & Facilities</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Subcategory
+                </label>
+                <input
+                  type="text"
+                  value={editSubcategory}
+                  onChange={(e) => setEditSubcategory(e.target.value)}
+                  placeholder="e.g. Engineering Laptop, 4x4 Wagon, Total Station"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-eec-accent/30"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                Resource Title / Commercial Description *
+              </label>
+              <input
+                type="text"
+                required
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="e.g. Dell Latitude 5540 15.6 inch Laptop Core i7"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-eec-accent/30"
+              />
+            </div>
+          </div>
+
+          {/* 2. Department Ownership & Storage Depot */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-100 text-xs font-bold text-slate-800 uppercase tracking-wider">
+              <MapPin className="w-3.5 h-3.5 text-eec-primary" />
+              2. Department Ownership & Storage Location
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Owning Directorate / Department *
+                </label>
+                <select
+                  value={editDepartmentId}
+                  onChange={(e) => setEditDepartmentId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-eec-accent/30"
+                >
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.code})
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-500">Corporate department with budgetary and administrative accountability.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Physical Storage / Depot Location *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editLocation}
+                  onChange={(e) => setEditLocation(e.target.value)}
+                  placeholder="e.g. Central Store - Kersa, Bay 4"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-eec-accent/30"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">Physical warehouse or yard location where asset is stored.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. General & Commercial Information (Optional) */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center gap-2 pb-1 border-b border-slate-100 text-xs font-bold text-slate-800 uppercase tracking-wider">
+              <Info className="w-3.5 h-3.5 text-eec-primary" />
+              3. General & Commercial Information
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Manufacturer / Make
+                </label>
+                <input
+                  type="text"
+                  value={editManufacturer}
+                  onChange={(e) => setEditManufacturer(e.target.value)}
+                  placeholder="e.g. Dell, Toyota, CAT, Leica"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-eec-accent/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Model Name / Number
+                </label>
+                <input
+                  type="text"
+                  value={editModel}
+                  onChange={(e) => setEditModel(e.target.value)}
+                  placeholder="e.g. Latitude 5540, HZ76, TS16"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-eec-accent/30"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Hardware Serial Number
+                </label>
+                <input
+                  type="text"
+                  value={editSerialNumber}
+                  onChange={(e) => setEditSerialNumber(e.target.value)}
+                  placeholder="e.g. SN-982104"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-eec-accent/30 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Condition
+                </label>
+                <select
+                  value={editCondition}
+                  onChange={(e) => setEditCondition(e.target.value as ResourceCondition)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none"
+                >
+                  <option value="EXCELLENT">Excellent (Brand New)</option>
+                  <option value="GOOD">Good (Operational)</option>
+                  <option value="FAIR">Fair (Needs Inspection)</option>
+                  <option value="NEEDS_REPAIR">Needs Repair</option>
+                  <option value="DAMAGED">Damaged</option>
+                  <option value="RETIRED">Retired</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Purchase Date
+                </label>
+                <input
+                  type="date"
+                  value={editPurchaseDate}
+                  onChange={(e) => setEditPurchaseDate(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Purchase Value (ETB)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editCostETB}
+                  onChange={(e) => setEditCostETB(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Warranty Expiry
+                </label>
+                <input
+                  type="date"
+                  value={editWarrantyExpiry}
+                  onChange={(e) => setEditWarrantyExpiry(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Supplier / Vendor
+                </label>
+                <input
+                  type="text"
+                  value={editSupplier}
+                  onChange={(e) => setEditSupplier(e.target.value)}
+                  placeholder="e.g. Nyala Motors, Dell East Africa"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Operational Notes / Remarks
+                </label>
+                <input
+                  type="text"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="e.g. Dedicated for regional survey projects"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                Description / Purpose Overview
+              </label>
+              <textarea
+                rows={2}
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="e.g. Corporate engineering asset assigned for field infrastructure mapping"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
+              />
+            </div>
+          </div>
+
+          {/* 4. Category-Specific Specifications */}
+          <div className="pt-2">
+            {editCategory === 'IT_EQUIPMENT' && (
+              <div className="p-3.5 bg-blue-50/60 rounded-xl border border-blue-200/80 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-blue-900 uppercase tracking-wider">
+                  <Cpu className="w-3.5 h-3.5 text-blue-700" />
+                  IT Equipment Specifications
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-800 uppercase mb-1">Computer / Device Type</label>
+                    <select
+                      value={editItType}
+                      onChange={(e) => setEditItType(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-blue-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    >
+                      <option value="Laptop">Laptop / Notebook</option>
+                      <option value="Desktop">Desktop Workstation</option>
+                      <option value="Server">Rack / Tower Server</option>
+                      <option value="Tablet">Field Tablet</option>
+                      <option value="Network Device">Network Switch / Router</option>
+                      <option value="Peripheral">Printer / Scanner / Peripheral</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-800 uppercase mb-1">Operating System</label>
+                    <input
+                      type="text"
+                      value={editItOs}
+                      onChange={(e) => setEditItOs(e.target.value)}
+                      placeholder="e.g. Windows 11 Pro, Ubuntu 24.04"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-blue-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-800 uppercase mb-1">Processor (CPU)</label>
+                    <input
+                      type="text"
+                      value={editItProcessor}
+                      onChange={(e) => setEditItProcessor(e.target.value)}
+                      placeholder="e.g. Intel Core i7-1365U, AMD Ryzen 7"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-blue-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-800 uppercase mb-1">RAM Capacity (GB)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={editItRam}
+                      onChange={(e) => setEditItRam(e.target.value)}
+                      placeholder="e.g. 16, 32, 64"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-blue-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-blue-800 uppercase mb-1">Primary Storage</label>
+                    <input
+                      type="text"
+                      value={editItStorage}
+                      onChange={(e) => setEditItStorage(e.target.value)}
+                      placeholder="e.g. 512GB NVMe SSD, 1TB SSD"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-blue-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {editCategory === 'VEHICLES' && (
+              <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200/80 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-emerald-900 uppercase tracking-wider">
+                  <Car className="w-3.5 h-3.5 text-emerald-700" />
+                  Vehicle & Transport Specifications
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-800 uppercase mb-1">Vehicle Type</label>
+                    <select
+                      value={editVehType}
+                      onChange={(e) => setEditVehType(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-emerald-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                    >
+                      <option value="Pickup 4x4">Pickup 4x4 (Double Cab)</option>
+                      <option value="Station Wagon">Station Wagon / SUV</option>
+                      <option value="Sedan">Sedan / Service Car</option>
+                      <option value="Minibus">Minibus / Staff Van</option>
+                      <option value="Dump Truck">Heavy Dump Truck</option>
+                      <option value="Water Tanker">Water Tanker Truck</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-800 uppercase mb-1">Plate Number</label>
+                    <input
+                      type="text"
+                      value={editPlateNumber}
+                      onChange={(e) => setEditPlateNumber(e.target.value)}
+                      placeholder="e.g. 3-45892 ET"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-emerald-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-800 uppercase mb-1">Fuel Type</label>
+                    <select
+                      value={editFuelType}
+                      onChange={(e) => setEditFuelType(e.target.value as any)}
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-emerald-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-medium"
+                    >
+                      <option value="DIESEL">Diesel</option>
+                      <option value="PETROL">Petrol</option>
+                      <option value="HYBRID">Hybrid</option>
+                      <option value="ELECTRIC">Electric</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-800 uppercase mb-1">Chassis / VIN Number</label>
+                    <input
+                      type="text"
+                      value={editChassisNumber}
+                      onChange={(e) => setEditChassisNumber(e.target.value)}
+                      placeholder="e.g. JT111HZ76098231"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-emerald-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-800 uppercase mb-1">Engine Number</label>
+                    <input
+                      type="text"
+                      value={editEngineNumber}
+                      onChange={(e) => setEditEngineNumber(e.target.value)}
+                      placeholder="e.g. 1HZ-883921"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-emerald-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-emerald-800 uppercase mb-1">Current Mileage (km)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editMileage}
+                      onChange={(e) => setEditMileage(e.target.value)}
+                      placeholder="e.g. 15000"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-emerald-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {editCategory === 'HEAVY_MACHINERY' && (
+              <div className="p-3.5 bg-amber-50/60 rounded-xl border border-amber-200/80 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-900 uppercase tracking-wider">
+                  <Wrench className="w-3.5 h-3.5 text-amber-700" />
+                  Heavy Machinery Specifications
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-amber-800 uppercase mb-1">Machine Type</label>
+                    <input
+                      type="text"
+                      value={editMachType}
+                      onChange={(e) => setEditMachType(e.target.value)}
+                      placeholder="e.g. Crawler Excavator, Wheel Loader"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-amber-800 uppercase mb-1">Capacity / Power Rating</label>
+                    <input
+                      type="text"
+                      value={editMachCapacity}
+                      onChange={(e) => setEditMachCapacity(e.target.value)}
+                      placeholder="e.g. 20-ton, 1.8 m³ bucket, 350 kVA"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-amber-800 uppercase mb-1">Current Operating Hours</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editOperatingHours}
+                      onChange={(e) => setEditOperatingHours(e.target.value)}
+                      placeholder="e.g. 1250"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {editCategory === 'SURVEYING_GEOTECHNICAL' && (
+              <div className="p-3.5 bg-cyan-50/60 rounded-xl border border-cyan-200/80 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-cyan-900 uppercase tracking-wider">
+                  <Compass className="w-3.5 h-3.5 text-cyan-700" />
+                  Surveying & Geotechnical Specifications
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-cyan-800 uppercase mb-1">Equipment Type</label>
+                    <input
+                      type="text"
+                      value={editSurvType}
+                      onChange={(e) => setEditSurvType(e.target.value)}
+                      placeholder="e.g. Robotic Total Station, GNSS Receiver"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-cyan-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-cyan-800 uppercase mb-1">Measurement Accuracy Grade</label>
+                    <input
+                      type="text"
+                      value={editAccuracyGrade}
+                      onChange={(e) => setEditAccuracyGrade(e.target.value)}
+                      placeholder="e.g. 0.5 arc-second, 1 mm + 1.5 ppm"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-cyan-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-cyan-800 uppercase mb-1">Calibration Certificate #</label>
+                    <input
+                      type="text"
+                      value={editCalibrationCert}
+                      onChange={(e) => setEditCalibrationCert(e.target.value)}
+                      placeholder="e.g. EEC-CAL-2026-0442"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-cyan-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-cyan-400 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-cyan-800 uppercase mb-1">Next Calibration Due Date</label>
+                    <input
+                      type="date"
+                      value={editNextCalibrationDue}
+                      onChange={(e) => setEditNextCalibrationDue(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-cyan-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-cyan-400 font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {editCategory === 'CAMP_FACILITY_FURNITURE' && (
+              <div className="p-3.5 bg-purple-50/60 rounded-xl border border-purple-200/80 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-purple-900 uppercase tracking-wider">
+                  <Armchair className="w-3.5 h-3.5 text-purple-700" />
+                  Furniture & Facility Specifications
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-purple-800 uppercase mb-1">Furniture / Item Type</label>
+                    <input
+                      type="text"
+                      value={editFurnType}
+                      onChange={(e) => setEditFurnType(e.target.value)}
+                      placeholder="e.g. Executive Desk, Ergonomic Mesh Chair"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-purple-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-purple-800 uppercase mb-1">Construction Material</label>
+                    <input
+                      type="text"
+                      value={editFurnMaterial}
+                      onChange={(e) => setEditFurnMaterial(e.target.value)}
+                      placeholder="e.g. Solid Wood / Oak, Steel Frame, Mesh"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-purple-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-purple-800 uppercase mb-1">Dimensions (W x D x H)</label>
+                    <input
+                      type="text"
+                      value={editFurnDimensions}
+                      onChange={(e) => setEditFurnDimensions(e.target.value)}
+                      placeholder="e.g. 160 x 80 x 75 cm"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-purple-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-purple-800 uppercase mb-1">Color / Finish</label>
+                    <input
+                      type="text"
+                      value={editFurnColor}
+                      onChange={(e) => setEditFurnColor(e.target.value)}
+                      placeholder="e.g. Walnut & Charcoal, Gunmetal Grey"
+                      className="w-full px-3 py-1.5 text-xs bg-white border border-purple-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 5. Custody & Status Protection Notice */}
+          <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between text-xs text-slate-600">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Custody Protection Safeguard</span>
+            </div>
+            <span className="text-[11px] text-slate-500">Personnel custody assignment and maintenance status transitions are strictly governed by their dedicated corporate workflows.</span>
+          </div>
+
+          {/* Modal Actions */}
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setIsEditModalOpen(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={savingEdit}
+              className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
+            >
+              {savingEdit ? 'Saving Changes...' : 'Save Resource Details'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Operational Status Update Modal */}
       <Modal
         isOpen={isStatusModalOpen}
         onClose={() => setIsStatusModalOpen(false)}
-        title="Update Asset Status & Custody"
+        title="Update Operational Status"
         subtitle={`Modify operational status for ${resource.itemCode}`}
       >
         <form onSubmit={handleUpdateStatus} className="space-y-4">
@@ -792,9 +1645,12 @@ export const ResourceDetailPage: React.FC = () => {
       >
         <div className="space-y-4">
           {deleteError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
-              <span>{deleteError}</span>
+            <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl space-y-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-rose-900">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Deletion Safeguard Notice</span>
+              </div>
+              <p className="leading-relaxed">{deleteError}</p>
             </div>
           )}
 
@@ -808,7 +1664,7 @@ export const ResourceDetailPage: React.FC = () => {
               Administrative Safeguard Notice:
             </p>
             <p className="text-[11px] text-amber-700 leading-relaxed">
-              Only system administrators can delete records. Assets currently assigned to personnel cannot be deleted until a return workflow is completed. This action is irreversible.
+              Only unassigned resources with no operational history (assignments, maintenance, transfers, inspections) may be deleted. Resources with history must be preserved for audit governance—use <strong>Update Status</strong> to retire or dispose of them instead.
             </p>
           </div>
 
@@ -828,7 +1684,7 @@ export const ResourceDetailPage: React.FC = () => {
               type="button"
               disabled={deleting}
               onClick={handleDeleteResource}
-              className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-sm"
+              className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-sm disabled:opacity-50"
             >
               <Trash2 className="w-4 h-4" />
               {deleting ? 'Deleting...' : 'Confirm Permanent Deletion'}

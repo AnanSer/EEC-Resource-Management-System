@@ -1004,20 +1004,45 @@ router.put('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
       }
     }
 
-    if (serialNumber !== undefined && serialNumber !== null && String(serialNumber).trim() !== '') {
-      const cleanSerial = String(serialNumber).trim();
+    if (name !== undefined) {
+      if (typeof name !== 'string' || name.trim().length < 2) {
+        return res.status(400).json({
+          success: false,
+          message: 'Resource name must be at least 2 characters',
+        });
+      }
+    }
+
+    if (category !== undefined) {
+      if (!VALID_CATEGORIES.includes(category)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid category '${category}'. Must be one of: [${VALID_CATEGORIES.join(', ')}]`,
+        });
+      }
+    }
+
+    const rawSerial = serialNumber !== undefined && serialNumber !== null ? String(serialNumber).trim() : '';
+    const specsSerial = specs?.serialNumber || itSpecs?.serialNumber || machinerySpecs?.serialNumber || surveyingSpecs?.serialNumber;
+    const rawSpecsSerial = specsSerial !== undefined && specsSerial !== null ? String(specsSerial).trim() : '';
+    const specsChassis = specs?.chassisNumber || vehicleSpecs?.chassisNumber;
+    const rawChassis = specsChassis !== undefined && specsChassis !== null ? String(specsChassis).trim() : '';
+
+    const effectiveSerial = rawSerial || rawSpecsSerial || rawChassis || (serialNumber === null ? null : undefined);
+
+    if (effectiveSerial && effectiveSerial !== existing.serialNumber) {
       const dupSerial = await prisma.resource.findFirst({
         where: {
           id: { not: existing.id },
           status: { not: 'DISPOSED' },
-          serialNumber: { equals: cleanSerial, mode: 'insensitive' },
+          serialNumber: { equals: effectiveSerial, mode: 'insensitive' },
         },
         select: { id: true, itemCode: true, name: true },
       });
       if (dupSerial) {
         return res.status(409).json({
           success: false,
-          message: `A resource with serial number '${cleanSerial}' already exists in registry (${dupSerial.itemCode} - ${dupSerial.name})`,
+          message: `A resource with serial number '${effectiveSerial}' already exists in registry (${dupSerial.itemCode} - ${dupSerial.name})`,
         });
       }
     }
@@ -1027,19 +1052,27 @@ router.put('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
     if (itemCode !== undefined) updateData.itemCode = itemCode.trim().toUpperCase();
-    if (category !== undefined && VALID_CATEGORIES.includes(category)) updateData.category = category;
+    if (category !== undefined) updateData.category = category;
     if (subcategory !== undefined) updateData.subcategory = subcategory ? subcategory.trim() : null;
     if (description !== undefined) updateData.description = description ? description.trim() : null;
     if (manufacturer !== undefined) updateData.manufacturer = manufacturer ? manufacturer.trim() : null;
     if (model !== undefined) updateData.model = model ? model.trim() : null;
-    if (serialNumber !== undefined) updateData.serialNumber = serialNumber ? serialNumber.trim() : null;
+    if (effectiveSerial !== undefined) updateData.serialNumber = effectiveSerial ? effectiveSerial.trim() : null;
     if (status !== undefined) updateData.status = status;
     if (condition !== undefined && VALID_CONDITIONS.includes(condition)) updateData.condition = condition;
     if (location !== undefined) updateData.location = location ? location.trim() : existing.location;
     if (departmentId !== undefined) updateData.departmentId = departmentId;
     if (supplier !== undefined) updateData.supplier = supplier ? supplier.trim() : null;
     if (notes !== undefined) updateData.notes = notes ? notes.trim() : null;
-    if (combinedSpecs !== undefined) updateData.specs = combinedSpecs;
+    if (combinedSpecs !== undefined) {
+      if (category !== undefined && category !== existing.category) {
+        updateData.specs = combinedSpecs;
+      } else {
+        updateData.specs = typeof existing.specs === 'object' && existing.specs !== null && typeof combinedSpecs === 'object' && combinedSpecs !== null
+          ? { ...(existing.specs as any), ...combinedSpecs }
+          : combinedSpecs;
+      }
+    }
 
     const costInput = purchaseCostETB !== undefined ? purchaseCostETB : req.body.purchaseCost;
     if (costInput !== undefined && costInput !== null && costInput !== '') {
@@ -1168,15 +1201,74 @@ router.delete('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => 
     if (existing.status === 'ASSIGNED' || existing.currentAssigneeId) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot delete a resource that is currently assigned to personnel',
+        message: `Cannot delete resource '${existing.itemCode}' while it is currently assigned to personnel. A return workflow must be completed first.`,
       });
     }
+
+    const OPERATIONAL_AUDIT_ACTIONS = [
+      'RESOURCE_ASSIGNED',
+      'CUSTODY_TRANSFERRED',
+      'RESOURCE_RETURNED',
+      'MAINTENANCE_SUBMITTED',
+      'MAINTENANCE_APPROVED',
+      'MAINTENANCE_REJECTED',
+      'MAINTENANCE_STARTED',
+      'MAINTENANCE_COMPLETED',
+      'MAINTENANCE_CANCELLED',
+      'INSPECTION_RECORDED',
+    ];
+
+    // Safe deletion policy: check all historical operational dependencies
+    const [
+      assignmentCount,
+      transferCount,
+      requisitionCount,
+      maintenanceCount,
+      inspectionCount,
+      operationalAuditCount,
+    ] = await Promise.all([
+      prisma.resourceAssignment.count({ where: { resourceId: existing.id } }),
+      prisma.custodyTransfer.count({ where: { resourceId: existing.id } }),
+      prisma.resourceRequisition.count({ where: { fulfilledResourceId: existing.id } }),
+      prisma.maintenanceRequest.count({ where: { resourceId: existing.id } }),
+      prisma.maintenanceInspection.count({ where: { resourceId: existing.id } }),
+      prisma.auditEvent.count({
+        where: {
+          resourceId: existing.id,
+          actionType: { in: OPERATIONAL_AUDIT_ACTIONS },
+        },
+      }),
+    ]);
+
+    const historyReasons: string[] = [];
+    if (assignmentCount > 0) historyReasons.push(`${assignmentCount} assignment record(s)`);
+    if (transferCount > 0) historyReasons.push(`${transferCount} custody transfer(s)`);
+    if (requisitionCount > 0) historyReasons.push(`${requisitionCount} fulfillment requisition(s)`);
+    if (maintenanceCount > 0) historyReasons.push(`${maintenanceCount} maintenance request(s)`);
+    if (inspectionCount > 0) historyReasons.push(`${inspectionCount} inspection record(s)`);
+    if (operationalAuditCount > 0) historyReasons.push(`${operationalAuditCount} operational audit log(s)`);
+
+    if (historyReasons.length > 0) {
+      return res.status(409).json({
+        success: false,
+        hasHistory: true,
+        historyReasons,
+        message: `Permanent deletion blocked: Resource '${existing.itemCode}' (${existing.name}) cannot be deleted because it has active historical operational records (${historyReasons.join(', ')}). Corporate policy requires preserving complete operational custody and maintenance history. To retire or take this asset out of service, please use the 'Update Status' action to set its status to RETIRED or DISPOSED instead.`,
+      });
+    }
+
+    // Clean up initial registration audit event linked to this safe unassigned resource
+    await prisma.auditEvent.deleteMany({
+      where: {
+        resourceId: existing.id,
+      },
+    });
 
     await prisma.resource.delete({ where: { id: existing.id } });
 
     await recordAuditEvent(prisma, {
       actionType: 'RESOURCE_DELETED',
-      resourceId: existing.id,
+      resourceId: null,
       resourceName: existing.name,
       resourceCode: existing.itemCode,
       resourceCategory: existing.category,
@@ -1185,18 +1277,18 @@ router.delete('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => 
       actorName: req.user!.fullName,
       actorRole: userRole,
       referenceId: existing.itemCode,
-      details: `Resource ${existing.name} (${existing.itemCode}) permanently deleted from registry`,
+      details: `Resource ${existing.name} (${existing.itemCode}) permanently deleted from registry (no operational history)`,
     });
 
     return res.status(200).json({
       success: true,
       message: `Resource ${existing.itemCode} deleted from registry successfully`,
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[DELETE /api/resources/:id Error]', err);
     return res.status(500).json({
       success: false,
-      message: 'Failed to delete resource',
+      message: err.message || 'Failed to delete resource',
     });
   }
 });

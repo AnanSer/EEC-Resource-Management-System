@@ -250,6 +250,7 @@ export interface Resource {
   model?: string;
   warrantyExpiry?: string;
   description?: string;
+  specs?: any;
   // Polymorphic specs
   itSpecs?: ITSpecs;
   vehicleSpecs?: VehicleSpecs;
