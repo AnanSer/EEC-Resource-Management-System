@@ -8,6 +8,11 @@ import { applySecurityHeaders } from './http/securityHeaders';
 import { parseCookies } from './http/cookies';
 import { parseRequestBody } from './http/bodyParser';
 import { sessionMiddleware } from './auth/auth.middleware';
+import { 
+  startPeriodicSessionCleanup, 
+  stopPeriodicSessionCleanup, 
+  cleanupExpiredSessions 
+} from './auth/session';
 import authRouter from './auth/auth.routes';
 import departmentRouter from './departments/department.routes';
 import employeeRouter from './employees/employee.routes';
@@ -43,15 +48,10 @@ export function getAllowedOrigins(): string[] {
 // Initialize main router
 export const router = new Router();
 
-// Health check endpoint
+// Health check endpoint (SEC-15: minimal public response, no environment or infrastructure leakage)
 router.get('/api/health', (_req: AppRequest, res: AppResponse) => {
   res.status(200).json({
-    status: 'healthy',
-    service: 'EEC-RMS-Backend',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development',
-    server: 'node:http',
+    status: 'ok',
   });
 });
 
@@ -66,13 +66,10 @@ router.mount('/api/maintenance', maintenanceRouter);
 router.mount('/api/reports', reportRouter);
 router.mount('/api/notifications', notificationRouter);
 
-// Root informational endpoint
+// Root informational endpoint (SEC-15: minimal public response)
 router.get('/', (_req: AppRequest, res: AppResponse) => {
   res.status(200).json({
-    message: 'Ethiopian Engineering Corporation (EEC) Resource Management System API',
-    healthCheck: '/api/health',
-    version: '1.0.0',
-    framework: 'Node.js Native HTTP',
+    status: 'ok',
   });
 });
 
@@ -162,12 +159,17 @@ if (process.env.NODE_ENV !== 'test' && !process.env.RMS_TEST_MODE) {
     console.log(`[EEC-RMS] Native Node.js HTTP server running on port ${PORT}`);
     console.log(`[EEC-RMS] Health endpoint: http://localhost:${PORT}/api/health`);
     console.log(`[EEC-RMS] Trusted Frontend origin: ${FRONTEND_URL}`);
+
+    // Start background expired session cleanup (SEC-14)
+    startPeriodicSessionCleanup();
+    cleanupExpiredSessions().catch(() => {});
   });
 }
 
 // Graceful shutdown
 const shutdown = () => {
   console.log('\n[EEC-RMS] Gracefully shutting down native HTTP server...');
+  stopPeriodicSessionCleanup();
   server.close(() => {
     console.log('[EEC-RMS] Server closed.');
     process.exit(0);

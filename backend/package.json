@@ -9,8 +9,10 @@
     "type-check": "tsc --noEmit",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy",
+    "migrate:deploy": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
-    "test": "tsx tests/departments_employees.test.ts && tsx tests/resources.test.ts && tsx tests/assignments.test.ts && tsx tests/requisitions_and_my_assets.test.ts && tsx tests/historical_resource_access.test.ts && tsx tests/maintenance.test.ts && tsx tests/reports.test.ts && tsx tests/notifications.test.ts && tsx tests/handover_fulfillment_selection.test.ts && tsx tests/employee_search_and_eligibility.test.ts && tsx tests/assignment_selectors_and_validation.test.ts && tsx tests/maintenance_submission_ux.test.ts && tsx tests/simplified_maintenance_workflow.test.ts && tsx tests/resource_registration.test.ts && tsx tests/resource_editing_and_deletion.test.ts && tsx tests/forgot_and_reset_password.test.ts && tsx tests/phase1_critical_security.test.ts && tsx tests/phase2_high_priority_security.test.ts && tsx tests/phase3_medium_priority_security.test.ts"
+    "test": "tsx tests/departments_employees.test.ts && tsx tests/resources.test.ts && tsx tests/assignments.test.ts && tsx tests/requisitions_and_my_assets.test.ts && tsx tests/historical_resource_access.test.ts && tsx tests/maintenance.test.ts && tsx tests/reports.test.ts && tsx tests/notifications.test.ts && tsx tests/handover_fulfillment_selection.test.ts && tsx tests/employee_search_and_eligibility.test.ts && tsx tests/assignment_selectors_and_validation.test.ts && tsx tests/maintenance_submission_ux.test.ts && tsx tests/simplified_maintenance_workflow.test.ts && tsx tests/resource_registration.test.ts && tsx tests/resource_editing_and_deletion.test.ts && tsx tests/forgot_and_reset_password.test.ts && tsx tests/phase1_critical_security.test.ts && tsx tests/phase2_high_priority_security.test.ts && tsx tests/phase3_medium_priority_security.test.ts && tsx tests/phase4_operations_and_cleanup.test.ts"
   },
   "keywords": [
     "eec",

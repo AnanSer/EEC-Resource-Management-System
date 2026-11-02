@@ -171,3 +171,61 @@ export async function validateSession(token: string): Promise<{ session: { id: s
 export async function destroySession(token: string): Promise<void> {
   await prisma.session.delete({ where: { token } }).catch(() => {});
 }
+
+let cleanupTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Safely removes expired sessions from the database (SEC-14).
+ * Bounded operation that only touches records where expiresAt < now.
+ * Active, non-expired sessions are strictly preserved.
+ */
+export async function cleanupExpiredSessions(): Promise<{ deletedCount: number }> {
+  try {
+    const result = await prisma.session.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() },
+      },
+    });
+    if (result.count > 0) {
+      console.log(`[EEC-RMS Session Cleanup] Cleaned up ${result.count} expired session(s).`);
+    }
+    return { deletedCount: result.count };
+  } catch (err: any) {
+    console.error('[EEC-RMS Session Cleanup Warning] Failed to clean up expired sessions:', err?.message || err);
+    return { deletedCount: 0 };
+  }
+}
+
+/**
+ * Starts periodic background cleanup of expired sessions (SEC-14).
+ * Defaults to 1 hour (3,600,000 ms).
+ * Uses unref() so the timer does not prevent process termination or block tests.
+ */
+export function startPeriodicSessionCleanup(intervalMs = 60 * 60 * 1000): NodeJS.Timeout | null {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
+
+  // Set periodic background cleanup interval
+  cleanupTimer = setInterval(() => {
+    cleanupExpiredSessions().catch(() => {});
+  }, intervalMs);
+
+  // Unref ensures the timer does not hold the Node.js event loop open on shutdown
+  if (cleanupTimer && typeof cleanupTimer.unref === 'function') {
+    cleanupTimer.unref();
+  }
+
+  return cleanupTimer;
+}
+
+/**
+ * Stops the periodic background session cleanup timer.
+ */
+export function stopPeriodicSessionCleanup(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
+}
