@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { maintenanceService, MaintenanceMetrics } from '../../services/maintenanceService';
 import { resourceService } from '../../services/resourceService';
@@ -27,10 +27,12 @@ import {
   History,
   Tag
 } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 export const MaintenancePage: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currentRole, currentUser } = useAuth();
   const [tickets, setTickets] = useState<MaintenanceTicket[]>([]);
   const [metrics, setMetrics] = useState<MaintenanceMetrics | null>(null);
@@ -54,6 +56,7 @@ export const MaintenancePage: React.FC = () => {
   const [estimatedCost, setEstimatedCost] = useState<number>(10000);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const initialNavigationTriggerProcessed = useRef(false);
 
   // Details Modal
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -105,15 +108,63 @@ export const MaintenancePage: React.FC = () => {
   const canPerformTechnicalRepairs = isTechnician || isAdmin;
   const canReview = isAdmin || isManager;
 
-  const loadData = async () => {
+  const resetCreateForm = () => {
+    setSelectedResourceId('');
+    setTicketTitle('');
+    setDescription('');
+    setPriority('MEDIUM');
+    setTechnician('');
+    setEstimatedCost(10000);
+    setCreateError(null);
+  };
+
+  const openCreateModal = (preselectedResourceId?: string) => {
+    setCreateError(null);
+    if (preselectedResourceId) {
+      setSelectedResourceId(preselectedResourceId);
+    } else if (resources.length > 0 && !selectedResourceId) {
+      setSelectedResourceId(resources[0].id);
+    }
+    setIsCreateModalOpen(true);
+  };
+
+  // Dedicated one-time effect for navigation or query parameter trigger (e.g. from ResourceDetailPage)
+  // Ensures location state and query params are consumed and immediately cleared, preventing reopening on refresh
+  useEffect(() => {
+    if (initialNavigationTriggerProcessed.current) return;
+
+    const stateOpen = (location.state as any)?.openReportModal;
+    const stateResourceId = (location.state as any)?.resourceId;
+    const queryOpen = searchParams.get('openReportModal') === 'true' || searchParams.get('report') === 'true';
+    const queryResourceId = searchParams.get('resourceId');
+
+    if (stateOpen || queryOpen) {
+      initialNavigationTriggerProcessed.current = true;
+      const targetResourceId = stateResourceId || queryResourceId;
+      if (targetResourceId) {
+        setSelectedResourceId(targetResourceId);
+      }
+      setIsCreateModalOpen(true);
+
+      // Immediately clear router state and query params so subsequent renders,
+      // reloads, or data refreshes CANNOT reopen the modal.
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, searchParams, navigate, location.pathname]);
+
+  const loadData = async (overrideFilters?: { status?: string; priority?: string; search?: string }) => {
     setLoading(true);
     setActionError(null);
     try {
+      const activeStatus = overrideFilters?.status !== undefined ? overrideFilters.status : statusFilter;
+      const activePriority = overrideFilters?.priority !== undefined ? overrideFilters.priority : priorityFilter;
+      const activeSearch = overrideFilters?.search !== undefined ? overrideFilters.search : searchQuery;
+
       const [tList, mMetrics] = await Promise.all([
         maintenanceService.getTickets({
-          status: statusFilter,
-          priority: priorityFilter,
-          search: searchQuery,
+          status: activeStatus,
+          priority: activePriority,
+          search: activeSearch,
         }),
         maintenanceService.getMetrics(),
       ]);
@@ -149,18 +200,6 @@ export const MaintenancePage: React.FC = () => {
       }
 
       setResources(authorizedResources);
-
-      // Pre-select resource if navigated from Resource Detail "Report Fault" action
-      if (location.state?.openReportModal && location.state?.resourceId) {
-        setSelectedResourceId(location.state.resourceId);
-        setIsCreateModalOpen(true);
-      } else if (authorizedResources.length > 0) {
-        if (!selectedResourceId || !authorizedResources.some((r) => r.id === selectedResourceId)) {
-          setSelectedResourceId(authorizedResources[0].id);
-        }
-      } else {
-        setSelectedResourceId('');
-      }
     } catch (err: any) {
       console.error('Failed to load maintenance data', err);
       setActionError(err.response?.data?.message || err.message || 'Failed to load maintenance data');
@@ -274,6 +313,8 @@ export const MaintenancePage: React.FC = () => {
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (creating) return;
+
     if (!selectedResourceId) {
       if (currentRole === 'EMPLOYEE' && resources.length === 0) {
         setCreateError('You currently have no assigned equipment eligible for maintenance reporting.');
@@ -293,25 +334,47 @@ export const MaintenancePage: React.FC = () => {
         assignedTechnicianName: technician || undefined,
         estimatedCostETB: estimatedCost ? Number(estimatedCost) : undefined,
       });
+
+      // 1. Close modal automatically and keep it closed
       setIsCreateModalOpen(false);
-      setTicketTitle('');
-      setDescription('');
-      setEstimatedCost(10000);
-      setTechnician('');
+
+      // 2. Reset form completely so old values do not appear next time
+      resetCreateForm();
+
+      // 3. Clear any preselected resource or modal-opening trigger
+      initialNavigationTriggerProcessed.current = true;
+      if (location.state || location.search) {
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+
+      // 4. Clear filters and search to guarantee newly created request appears in the list
+      setStatusFilter('ALL');
+      setPriorityFilter('ALL');
+      setSearchQuery('');
+
+      // 5. Display clear success toast/message
       setToastMessage(`Maintenance request ${created.requestNumber || created.id} submitted successfully! Equipment marked under maintenance.`);
       setTimeout(() => setToastMessage(null), 5000);
-      await loadData();
+
+      // 6. Refresh maintenance list and dashboard metrics from backend
+      await loadData({ status: 'ALL', priority: 'ALL', search: '' });
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.message || 'Ticket creation failed';
+      // On failed submission: keep modal open, preserve form values, show useful validation/server error
+      const msg =
+        err.response?.data?.message ||
+        err.response?.data?.error ||
+        err.message ||
+        'Ticket creation failed. Please check form values and try again.';
       setCreateError(msg);
     } finally {
+      // Restore submit button
       setCreating(false);
     }
   };
 
   const handleReviewTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeTicket) return;
+    if (!activeTicket || reviewing) return;
     setReviewing(true);
     setActionError(null);
     try {
@@ -339,7 +402,7 @@ export const MaintenancePage: React.FC = () => {
 
   const handleUpdateStatus = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeTicket) return;
+    if (!activeTicket || updating) return;
     if (targetStatus === 'ON_HOLD' && !holdReason.trim()) {
       setUpdateError('A specific reason is mandatory when placing a work order on hold');
       return;
@@ -403,7 +466,7 @@ export const MaintenancePage: React.FC = () => {
 
   const handleRecordQA = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeTicket) return;
+    if (!activeTicket || recordingQA) return;
     setRecordingQA(true);
     setActionError(null);
     try {
@@ -473,8 +536,7 @@ export const MaintenancePage: React.FC = () => {
         <button
           onClick={() => {
             setActionError(null);
-            setCreateError(null);
-            setIsCreateModalOpen(true);
+            openCreateModal();
           }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl font-bold text-xs transition-colors shadow-sm"
         >
@@ -610,8 +672,7 @@ export const MaintenancePage: React.FC = () => {
             <button
               onClick={() => {
                 setActionError(null);
-                setCreateError(null);
-                setIsCreateModalOpen(true);
+                openCreateModal();
               }}
               className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-eec-primary hover:bg-[#0E5161] text-white rounded-xl text-xs font-bold transition-colors shadow-sm"
             >
@@ -1287,8 +1348,9 @@ export const MaintenancePage: React.FC = () => {
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => {
+          if (creating) return;
           setIsCreateModalOpen(false);
-          setCreateError(null);
+          resetCreateForm();
         }}
         title="Report Faulty Equipment"
         subtitle="Submit maintenance or repair request for EEC engineering assets"
@@ -1305,7 +1367,10 @@ export const MaintenancePage: React.FC = () => {
             <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Select Equipment *</label>
             <select
               value={selectedResourceId}
-              onChange={(e) => setSelectedResourceId(e.target.value)}
+              onChange={(e) => {
+                setSelectedResourceId(e.target.value);
+                setCreateError(null);
+              }}
               required
               disabled={creating || resources.length === 0}
               className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none disabled:opacity-60"
@@ -1317,11 +1382,16 @@ export const MaintenancePage: React.FC = () => {
                     : 'No eligible equipment available to report'}
                 </option>
               ) : (
-                resources.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.itemCode} • {r.name} ({r.category}) {r.currentAssigneeName ? `[Custodian: ${r.currentAssigneeName}]` : '[Store / Unassigned]'}
+                <>
+                  <option value="" disabled>
+                    -- Select equipment to report --
                   </option>
-                ))
+                  {resources.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.itemCode} • {r.name} ({r.category}) {r.currentAssigneeName ? `[Custodian: ${r.currentAssigneeName}]` : '[Store / Unassigned]'}
+                    </option>
+                  ))}
+                </>
               )}
             </select>
             {currentRole === 'EMPLOYEE' && resources.length === 0 && (
@@ -1406,15 +1476,15 @@ export const MaintenancePage: React.FC = () => {
               disabled={creating}
               onClick={() => {
                 setIsCreateModalOpen(false);
-                setCreateError(null);
+                resetCreateForm();
               }}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={creating || resources.length === 0 || !selectedResourceId}
+              disabled={creating || resources.length === 0 || !selectedResourceId || !ticketTitle.trim() || !description.trim()}
               className="px-5 py-2 text-xs font-bold text-white bg-eec-primary hover:bg-[#0E5161] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
               {creating ? (
