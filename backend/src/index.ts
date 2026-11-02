@@ -4,6 +4,7 @@ import { Router } from './http/router';
 import { AppRequest, AppResponse } from './http/types';
 import { decorateResponse } from './http/response';
 import { handleCors } from './http/cors';
+import { applySecurityHeaders } from './http/securityHeaders';
 import { parseCookies } from './http/cookies';
 import { parseRequestBody } from './http/bodyParser';
 import { sessionMiddleware } from './auth/auth.middleware';
@@ -23,12 +24,21 @@ dotenv.config();
 const PORT = parseInt(process.env.PORT || '5000', 10);
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-// Configure allowed CORS origins
-const allowedOrigins = [
-  FRONTEND_URL,
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-];
+// Configure allowed CORS origins (SEC-07)
+export function getAllowedOrigins(): string[] {
+  const configured = (process.env.FRONTEND_URL || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  if (process.env.NODE_ENV === 'production') {
+    return configured.length > 0 ? configured : ['https://eec-rms.vercel.app'];
+  }
+
+  // Development/test fallbacks
+  const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+  return Array.from(new Set([...configured, ...devOrigins]));
+}
 
 // Initialize main router
 export const router = new Router();
@@ -70,8 +80,11 @@ router.get('/', (_req: AppRequest, res: AppResponse) => {
  * Core Request Listener using Node.js built-in node:http module
  */
 export async function requestListener(req: http.IncomingMessage, res: http.ServerResponse) {
-  // Handle CORS & Preflight OPTIONS
-  if (handleCors(req, res, allowedOrigins)) {
+  // Apply centralized security headers uniformly (SEC-08)
+  applySecurityHeaders(res);
+
+  // Handle CORS & Preflight OPTIONS (SEC-07)
+  if (handleCors(req, res, getAllowedOrigins())) {
     return;
   }
 

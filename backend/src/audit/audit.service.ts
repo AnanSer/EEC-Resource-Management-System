@@ -273,9 +273,6 @@ export async function backfillHistoricalAuditEvents() {
  * Query Audit Trail with full RBAC, search, and filtering
  */
 export async function queryAuditTrail(user: any, filters: AuditQueryFilters) {
-  // Ensure historical records are backfilled
-  await backfillHistoricalAuditEvents();
-
   const userRole = user.role;
   const userDeptId = user.departmentId;
 
@@ -394,8 +391,6 @@ export async function queryAuditTrail(user: any, filters: AuditQueryFilters) {
  * Fetch complete chronological lifecycle history for a resource
  */
 export async function getResourceLifecycleHistory(user: any, resourceIdOrCode: string) {
-  await backfillHistoricalAuditEvents();
-
   const userRole = user.role;
   const userDeptId = user.departmentId;
 

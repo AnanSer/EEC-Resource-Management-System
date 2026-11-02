@@ -1257,13 +1257,9 @@ router.delete('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => 
       });
     }
 
-    // Clean up initial registration audit event linked to this safe unassigned resource
-    await prisma.auditEvent.deleteMany({
-      where: {
-        resourceId: existing.id,
-      },
-    });
-
+    // SEC-06: Preserve all historical audit events.
+    // The foreign key constraint onDelete: SetNull automatically disassociates existing.id
+    // while keeping the complete audit history (registration, metadata) intact in the database.
     await prisma.resource.delete({ where: { id: existing.id } });
 
     await recordAuditEvent(prisma, {

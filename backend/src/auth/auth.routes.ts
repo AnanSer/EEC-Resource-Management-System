@@ -2,13 +2,13 @@ import crypto from 'crypto';
 import { Router } from '../http/router';
 import { AppRequest, AppResponse } from '../http/types';
 import { hashPassword, verifyPassword } from './password';
-import { createSession, destroySession, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from './session';
+import { createSession, destroySession, SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS, getSessionCookieOptions } from './session';
 import { requireRole } from './auth.middleware';
 import prisma from '../lib/prisma';
 import { safeNotifyUser, safeNotifyUsers, findActiveUserIdsByRole } from '../notifications/notification.service';
 import { recordAuditEvent } from '../audit/audit.service';
 import { sendPasswordResetEmail } from './email.service';
-import { checkRateLimit } from './rateLimiter';
+import { checkRateLimit, getClientIp } from './rateLimiter';
 
 const router = new Router();
 
@@ -55,6 +55,17 @@ router.get('/departments', async (_req: AppRequest, res: AppResponse) => {
  */
 router.post('/register', async (req: AppRequest, res: AppResponse) => {
   try {
+    // Rate limit registration requests (SEC-09): max 10 per hour per IP
+    const clientIp = getClientIp(req);
+    const regCheck = checkRateLimit(`register:ip:${clientIp}`, 10, 60 * 60 * 1000);
+    if (!regCheck.allowed) {
+      res.setHeader('Retry-After', String(regCheck.retryAfterSeconds));
+      return res.status(429).json({
+        success: false,
+        message: `Too many registration attempts. Please wait ${Math.ceil(regCheck.retryAfterSeconds / 60)} minute(s) before trying again.`,
+      });
+    }
+
     const { email, password, fullName, departmentId, employeeId, phone } = req.body || {};
 
     if (!fullName || typeof fullName !== 'string' || fullName.trim().length < 2) {
@@ -261,14 +272,30 @@ router.post('/login', async (req: AppRequest, res: AppResponse) => {
   try {
     const { email, password } = req.body || {};
 
+    // Rate limiting (SEC-09): max 20 attempts per 15 min per IP, max 10 attempts per 15 min per account
+    const clientIp = getClientIp(req);
+    const sanitizedEmail = String(email || '').trim().toLowerCase();
+
+    const ipCheck = checkRateLimit(`login:ip:${clientIp}`, 20, 15 * 60 * 1000);
+    const accountCheck = sanitizedEmail
+      ? checkRateLimit(`login:account:${sanitizedEmail}`, 10, 15 * 60 * 1000)
+      : { allowed: true, retryAfterSeconds: 0 };
+
+    if (!ipCheck.allowed || !accountCheck.allowed) {
+      const retryAfter = Math.max(ipCheck.retryAfterSeconds, accountCheck.retryAfterSeconds);
+      res.setHeader('Retry-After', String(retryAfter));
+      return res.status(429).json({
+        success: false,
+        message: `Too many login attempts. Please wait ${Math.ceil(retryAfter / 60)} minute(s) before trying again.`,
+      });
+    }
+
     if (!email || !password) {
       return res.status(400).json({
         success: false,
         message: 'Email and password are required',
       });
     }
-
-    const sanitizedEmail = String(email).trim().toLowerCase();
 
     const user = await prisma.user.findUnique({
       where: { email: sanitizedEmail },
@@ -334,14 +361,14 @@ router.post('/login', async (req: AppRequest, res: AppResponse) => {
     // Create database-backed session
     const { token } = await createSession(user.id);
 
-    // Set secure HttpOnly cookie
-    res.setCookie(SESSION_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Lax',
-      path: '/',
-      maxAge: SESSION_EXPIRY_DAYS * 24 * 60 * 60,
-    });
+    // Set secure HttpOnly cookie (SEC-07)
+    res.setCookie(
+      SESSION_COOKIE_NAME,
+      token,
+      getSessionCookieOptions({
+        maxAge: SESSION_EXPIRY_DAYS * 24 * 60 * 60,
+      })
+    );
 
     return res.status(200).json({
       success: true,
@@ -404,12 +431,8 @@ router.post('/logout', async (req: AppRequest, res: AppResponse) => {
       await destroySession(req.sessionToken);
     }
 
-    res.clearCookie(SESSION_COOKIE_NAME, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'Lax',
-      path: '/',
-    });
+    const { maxAge, expires, ...clearOptions } = getSessionCookieOptions();
+    res.clearCookie(SESSION_COOKIE_NAME, clearOptions);
 
     return res.status(200).json({
       success: true,
@@ -450,7 +473,7 @@ router.post('/forgot-password', async (req: AppRequest, res: AppResponse) => {
     }
 
     // Rate limiting: 5 requests per 15 minutes by IP; 3 requests per 15 minutes by email
-    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    const clientIp = getClientIp(req);
     const ipCheck = checkRateLimit(`ip:${clientIp}`, 5, 15 * 60 * 1000);
     const emailCheck = checkRateLimit(`email:${sanitizedEmail}`, 3, 15 * 60 * 1000);
 
