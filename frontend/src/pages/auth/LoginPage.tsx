@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { EECLogo } from '../../components/brand/EECLogo';
@@ -119,6 +119,12 @@ export const LoginPage: React.FC = () => {
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                   Password
                 </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-semibold text-eec-primary hover:text-eec-primary/80 hover:underline transition-colors"
+                >
+                  Forgot Password?
+                </Link>
               </div>
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />

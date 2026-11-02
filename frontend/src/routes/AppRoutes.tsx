@@ -23,6 +23,8 @@ import { ProfilePage } from '../pages/profile/ProfilePage';
 // Authentication Pages
 import { LoginPage } from '../pages/auth/LoginPage';
 import { RegisterPage } from '../pages/auth/RegisterPage';
+import { ForgotPasswordPage } from '../pages/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from '../pages/auth/ResetPasswordPage';
 
 export const AppRoutes: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
@@ -48,6 +50,14 @@ export const AppRoutes: React.FC = () => {
       <Route
         path="/register"
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <RegisterPage />}
+      />
+      <Route
+        path="/forgot-password"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <ForgotPasswordPage />}
+      />
+      <Route
+        path="/reset-password"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <ResetPasswordPage />}
       />
 
       {/* Protected Corporate Application Routes */}

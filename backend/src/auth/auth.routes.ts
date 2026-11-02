@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router } from '../http/router';
 import { AppRequest, AppResponse } from '../http/types';
 import { hashPassword, verifyPassword } from './password';
@@ -6,6 +7,8 @@ import { requireRole } from './auth.middleware';
 import prisma from '../lib/prisma';
 import { safeNotifyUser, safeNotifyUsers, findActiveUserIdsByRole } from '../notifications/notification.service';
 import { recordAuditEvent } from '../audit/audit.service';
+import { sendPasswordResetEmail } from './email.service';
+import { checkRateLimit } from './rateLimiter';
 
 const router = new Router();
 
@@ -417,6 +420,213 @@ router.post('/logout', async (req: AppRequest, res: AppResponse) => {
     return res.status(500).json({
       success: false,
       message: 'Internal server error during logout',
+    });
+  }
+});
+
+/**
+ * POST /api/auth/forgot-password
+ * Public endpoint to request a password reset email.
+ * Returns generic success whether the email exists or not to prevent user enumeration.
+ * Rate-limited to prevent email and SMTP abuse.
+ */
+router.post('/forgot-password', async (req: AppRequest, res: AppResponse) => {
+  try {
+    const { email } = req.body || {};
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid email address is required',
+      });
+    }
+
+    const sanitizedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid email address is required',
+      });
+    }
+
+    // Rate limiting: 5 requests per 15 minutes by IP; 3 requests per 15 minutes by email
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown';
+    const ipCheck = checkRateLimit(`ip:${clientIp}`, 5, 15 * 60 * 1000);
+    const emailCheck = checkRateLimit(`email:${sanitizedEmail}`, 3, 15 * 60 * 1000);
+
+    if (!ipCheck.allowed || !emailCheck.allowed) {
+      const retryAfter = Math.max(ipCheck.retryAfterSeconds, emailCheck.retryAfterSeconds);
+      res.setHeader('Retry-After', String(retryAfter));
+      return res.status(429).json({
+        success: false,
+        message: `Too many password reset requests. Please wait ${Math.ceil(retryAfter / 60)} minute(s) before trying again.`,
+      });
+    }
+
+    // Find account by email
+    const user = await prisma.user.findUnique({
+      where: { email: sanitizedEmail },
+    });
+
+    // If user exists, generate token and send email
+    if (user) {
+      // Invalidate any existing unused reset tokens for this user
+      await prisma.passwordResetToken.deleteMany({
+        where: { userId: user.id },
+      });
+
+      // Generate cryptographically secure random token (32 bytes hex)
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+      const expiresInMinutes = 20;
+      const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
+
+      // Store only the SHA-256 hash in the database
+      await prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt,
+        },
+      });
+
+      // Construct reset URL from configured frontend URL (never from untrusted request headers)
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+      const resetUrl = `${frontendUrl.replace(/\/+$/, '')}/reset-password?token=${rawToken}`;
+
+      // Dispatch branded email via Nodemailer
+      try {
+        await sendPasswordResetEmail({
+          to: user.email,
+          recipientName: user.fullName || 'EEC Personnel',
+          resetUrl,
+          expiresInMinutes,
+        });
+      } catch (mailErr: any) {
+        console.error('[EEC-RMS Auth] Error dispatching password reset email:', mailErr?.message || mailErr);
+        // Do not leak SMTP details or crash; continue with generic success
+      }
+
+      // Record audit event
+      await recordAuditEvent(prisma, {
+        actionType: 'PASSWORD_RESET_REQUESTED',
+        actorId: user.id,
+        actorName: user.fullName,
+        actorRole: user.role,
+        departmentId: user.departmentId,
+        referenceId: user.email,
+        details: `Password reset request initiated for ${user.email}`,
+      });
+    }
+
+    // Uniform generic success response to prevent email enumeration
+    return res.status(200).json({
+      success: true,
+      message: 'If an account with this email address exists in the system, a password reset link has been sent to it.',
+    });
+  } catch (err: any) {
+    console.error('[EEC-RMS Auth] Forgot password error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to process password reset request',
+    });
+  }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Public endpoint to reset password using a valid, unexpired token.
+ * Hashes password using crypto.scrypt, invalidates token and all active sessions.
+ */
+router.post('/reset-password', async (req: AppRequest, res: AppResponse) => {
+  try {
+    const { token, password } = req.body || {};
+
+    if (!token || typeof token !== 'string' || token.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password reset token is required',
+      });
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password is required and must be at least 8 characters long',
+      });
+    }
+
+    const cleanToken = token.trim();
+    // Compute SHA-256 hash of the incoming token to match database
+    const tokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+
+    const resetTokenRecord = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!resetTokenRecord || resetTokenRecord.usedAt !== null) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Invalid or previously used password reset link. Please request a new one.',
+      });
+    }
+
+    if (resetTokenRecord.expiresAt < new Date()) {
+      return res.status(400).json({
+        success: false,
+        code: 'TOKEN_EXPIRED',
+        message: 'This password reset link has expired. Please request a new one.',
+      });
+    }
+
+    // Hash the new password using existing scrypt implementation
+    const newPasswordHash = await hashPassword(password);
+
+    // 1. Update user password
+    await prisma.user.update({
+      where: { id: resetTokenRecord.userId },
+      data: { passwordHash: newPasswordHash },
+    });
+
+    // 2. Mark this token as used and clean up any remaining tokens
+    await prisma.passwordResetToken.update({
+      where: { id: resetTokenRecord.id },
+      data: { usedAt: new Date() },
+    });
+    await prisma.passwordResetToken.deleteMany({
+      where: {
+        userId: resetTokenRecord.userId,
+        id: { not: resetTokenRecord.id },
+      },
+    });
+
+    // 3. Invalidate ALL existing sessions for this user for security
+    await prisma.session.deleteMany({
+      where: { userId: resetTokenRecord.userId },
+    });
+
+    // 4. Record audit event
+    await recordAuditEvent(prisma, {
+      actionType: 'PASSWORD_RESET_COMPLETED',
+      actorId: resetTokenRecord.userId,
+      actorName: resetTokenRecord.user.fullName,
+      actorRole: resetTokenRecord.user.role,
+      departmentId: resetTokenRecord.user.departmentId,
+      referenceId: resetTokenRecord.id,
+      details: `Password reset successfully completed for user ${resetTokenRecord.user.email}. All active sessions invalidated.`,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Your password has been successfully reset. You can now log in with your new password.',
+    });
+  } catch (err: any) {
+    console.error('[EEC-RMS Auth] Reset password error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to reset password',
     });
   }
 });

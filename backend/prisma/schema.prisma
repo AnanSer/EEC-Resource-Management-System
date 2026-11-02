@@ -61,6 +61,7 @@ model User {
 
   sessions     Session[]
   notifications Notification[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
@@ -103,6 +104,20 @@ model Session {
   @@index([userId])
   @@index([token])
   @@map("sessions")
+}
+
+// Password Reset Token Model
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 // Individually Tracked Corporate Resource / Physical Asset
