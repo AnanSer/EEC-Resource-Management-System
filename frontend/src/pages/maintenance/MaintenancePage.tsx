@@ -11,7 +11,6 @@ import {
   AlertCircle, 
   Check, 
   AlertTriangle,
-  ShieldCheck,
   CheckCircle2,
   Search,
   CheckCircle,
@@ -85,21 +84,6 @@ export const MaintenancePage: React.FC = () => {
   const [conditionOnCompletion, setConditionOnCompletion] = useState('GOOD');
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
-
-  // Optional QA during completion
-  const [includeQA, setIncludeQA] = useState(false);
-  const [compQAPassed, setCompQAPassed] = useState(true);
-  const [compQAFindings, setCompQAFindings] = useState('');
-  const [compQACertNumber, setCompQACertNumber] = useState('');
-  const [compQAType, setCompQAType] = useState<'CALIBRATION' | 'ROADWORTHINESS_BOLO' | 'HYDRAULIC' | 'SAFETY_AUDIT' | 'MAINTENANCE_QA'>('MAINTENANCE_QA');
-
-  // Inline QA Inspection Modal
-  const [isQAModalOpen, setIsQAModalOpen] = useState(false);
-  const [qaPassed, setQaPassed] = useState(true);
-  const [qaFindings, setQaFindings] = useState('');
-  const [qaRemarks, setQaRemarks] = useState('');
-  const [certNumber, setCertNumber] = useState('');
-  const [recordingQA, setRecordingQA] = useState(false);
 
   // Role permissions
   const isTechnician = currentRole === 'IT_TECHNICIAN';
@@ -283,7 +267,6 @@ export const MaintenancePage: React.FC = () => {
     setHoldReason('');
     setOutcome('REPAIRED_FIT_FOR_USE');
     setConditionOnCompletion('GOOD');
-    setIncludeQA(false);
     setUpdateError(null);
     setIsUpdateModalOpen(true);
   };
@@ -300,15 +283,6 @@ export const MaintenancePage: React.FC = () => {
     setHoldReason('');
     setUpdateError(null);
     setIsUpdateModalOpen(true);
-  };
-
-  const openQAModal = (ticket: MaintenanceTicket) => {
-    setActiveTicket(ticket);
-    setQaPassed(true);
-    setQaFindings('');
-    setQaRemarks('');
-    setCertNumber('');
-    setIsQAModalOpen(true);
   };
 
   const handleCreateTicket = async (e: React.FormEvent) => {
@@ -421,27 +395,9 @@ export const MaintenancePage: React.FC = () => {
         notes: targetStatus === 'ON_HOLD' ? holdReason : (progressNotes || resolutionNotes || diagnosis || undefined),
       });
 
-      // Post-repair QA inspection
-      if (targetStatus === 'COMPLETED' && includeQA) {
-        try {
-          await maintenanceService.recordInspection({
-            ticketId: activeTicket.id,
-            resourceId: activeTicket.resourceId,
-            inspectionType: compQAType,
-            passed: compQAPassed,
-            findings: compQAFindings || 'Post-repair verification and QA certification',
-            certificationNumber: compQACertNumber || undefined,
-            remarks: 'Recorded as part of repair completion workflow',
-          });
-        } catch (qaErr) {
-          console.warn('Inspection recording warning:', qaErr);
-        }
-      }
-
       setIsUpdateModalOpen(false);
       setHoldReason('');
       setProgressNotes('');
-      setIncludeQA(false);
       const custodyNote = res.custodyAction === 'RETURNED_TO_CUSTODIAN'
         ? ' Asset safely restored to custodian custody.'
         : res.custodyAction === 'RETURNED_TO_AVAILABLE'
@@ -461,36 +417,6 @@ export const MaintenancePage: React.FC = () => {
       setUpdateError(msg);
     } finally {
       setUpdating(false);
-    }
-  };
-
-  const handleRecordQA = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeTicket || recordingQA) return;
-    setRecordingQA(true);
-    setActionError(null);
-    try {
-      await maintenanceService.recordInspection({
-        ticketId: activeTicket.id,
-        resourceId: activeTicket.resourceId,
-        inspectionType: 'MAINTENANCE_QA',
-        passed: qaPassed,
-        findings: qaFindings,
-        certificationNumber: certNumber || undefined,
-        remarks: qaRemarks,
-      });
-      setIsQAModalOpen(false);
-      setToastMessage(`QA Inspection recorded as ${qaPassed ? 'PASSED' : 'FAILED'}`);
-      setTimeout(() => setToastMessage(null), 3500);
-      await loadData();
-      if (selectedDetailTicket?.id === activeTicket.id) {
-        const full = await maintenanceService.getById(activeTicket.id);
-        if (full) setSelectedDetailTicket(full);
-      }
-    } catch (err: any) {
-      setActionError(err.response?.data?.message || err.message || 'QA recording failed');
-    } finally {
-      setRecordingQA(false);
     }
   };
 
@@ -684,7 +610,6 @@ export const MaintenancePage: React.FC = () => {
       ) : (
         <div className="space-y-4">
           {tickets.map((t) => {
-            const latestInspection = t.inspections && t.inspections.length > 0 ? t.inspections[0] : null;
             const canReviewThisTicket =
               canReview &&
               (currentRole === 'ADMIN' || (currentRole === 'DEPARTMENT_MANAGER' && t.departmentId === currentUser?.departmentId));
@@ -802,27 +727,11 @@ export const MaintenancePage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* QA Test Status Tag */}
+                  {/* Footer metadata */}
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-slate-400" />
-                      <span className="font-semibold text-slate-700">QA Inspection: </span>
-                      {latestInspection ? (
-                        latestInspection.passed ? (
-                          <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            PASSED ({latestInspection.inspectionType})
-                          </span>
-                        ) : (
-                          <span className="text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                            FAILED ({latestInspection.inspectionType})
-                          </span>
-                        )
-                      ) : (
-                        <span className="text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                          Pending QA Verification
-                        </span>
-                      )}
-                    </div>
+                    <span className="text-slate-500 text-[11px]">
+                      {t.assignedTechnicianName ? `Technician: ${t.assignedTechnicianName}` : 'Technician: Not assigned yet'}
+                    </span>
 
                     <span className="text-slate-400 text-[11px]">
                       Reported: {t.reportedDate ? new Date(t.reportedDate).toLocaleDateString() : new Date(t.createdAt).toLocaleDateString()}
@@ -919,22 +828,10 @@ export const MaintenancePage: React.FC = () => {
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             Complete Repair
                           </button>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openQAModal(t);
-                            }}
-                            className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1"
-                            title="Record QA inspection test"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                            QA
-                          </button>
                         </div>
                       )}
 
-                      {/* ON_HOLD: Resume Work, Complete Repair, QA */}
+                      {/* ON_HOLD: Resume Work, Complete Repair */}
                       {t.status === 'ON_HOLD' && (
                         <div className="flex items-center gap-1.5 flex-wrap justify-end">
                           <button
@@ -959,18 +856,6 @@ export const MaintenancePage: React.FC = () => {
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             Complete Repair
-                          </button>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openQAModal(t);
-                            }}
-                            className="px-2.5 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1"
-                            title="Record QA inspection test"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                            QA
                           </button>
                         </div>
                       )}
@@ -1158,16 +1043,16 @@ export const MaintenancePage: React.FC = () => {
               </div>
             )}
 
-            {/* QA Inspections List */}
+            {/* Historical Inspections List */}
             {selectedDetailTicket.inspections && selectedDetailTicket.inspections.length > 0 && (
-              <div className="p-3.5 bg-purple-50/50 border border-purple-200 rounded-xl space-y-2">
-                <div className="font-bold text-purple-950 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-purple-700" />
-                  QA Inspections & Functional Certifications
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                  <History className="w-4 h-4 text-slate-500" />
+                  Historical Inspection Records (Archived)
                 </div>
                 <div className="space-y-2">
                   {selectedDetailTicket.inspections.map((i) => (
-                    <div key={i.id} className="p-2.5 bg-white border border-purple-200 rounded-lg text-xs space-y-1">
+                    <div key={i.id} className="p-2.5 bg-white border border-slate-200 rounded-lg text-xs space-y-1">
                       <div className="flex items-center justify-between">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           i.passed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
@@ -1288,18 +1173,10 @@ export const MaintenancePage: React.FC = () => {
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           Complete Repair
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => openQAModal(selectedDetailTicket)}
-                          className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                          QA Test
-                        </button>
                       </>
                     )}
 
-                    {/* ON_HOLD: Resume Work, Complete Repair, QA */}
+                    {/* ON_HOLD: Resume Work, Complete Repair */}
                     {selectedDetailTicket.status === 'ON_HOLD' && (
                       <>
                         <button
@@ -1317,14 +1194,6 @@ export const MaintenancePage: React.FC = () => {
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
                           Complete Repair
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openQAModal(selectedDetailTicket)}
-                          className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                          QA Test
                         </button>
                       </>
                     )}
@@ -1753,72 +1622,9 @@ export const MaintenancePage: React.FC = () => {
                   rows={2}
                   value={resolutionNotes}
                   onChange={(e) => setResolutionNotes(e.target.value)}
-                  placeholder="Summary of repair completion, calibration confirmation, and operational safety clearance"
+                  placeholder="Summary of repair completion and operational readiness"
                   className="w-full px-3 py-2 text-xs bg-white border border-emerald-300 rounded-xl focus:outline-none"
                 />
-              </div>
-
-              {/* Optional Inline QA Inspection */}
-              <div className="pt-2 border-t border-emerald-200">
-                <label className="flex items-center gap-2 cursor-pointer text-emerald-950 font-bold">
-                  <input
-                    type="checkbox"
-                    checked={includeQA}
-                    onChange={(e) => setIncludeQA(e.target.checked)}
-                    className="rounded text-eec-primary focus:ring-eec-primary"
-                  />
-                  <span>Attach Post-Repair QA Inspection Certification</span>
-                </label>
-
-                {includeQA && (
-                  <div className="mt-2.5 p-2.5 bg-white border border-emerald-200 rounded-lg space-y-2">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">QA Type</label>
-                        <select
-                          value={compQAType}
-                          onChange={(e) => setCompQAType(e.target.value as any)}
-                          className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg"
-                        >
-                          <option value="MAINTENANCE_QA">MAINTENANCE_QA</option>
-                          <option value="CALIBRATION">CALIBRATION</option>
-                          <option value="SAFETY_AUDIT">SAFETY_AUDIT</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">QA Result</label>
-                        <select
-                          value={compQAPassed ? 'PASSED' : 'FAILED'}
-                          onChange={(e) => setCompQAPassed(e.target.value === 'PASSED')}
-                          className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg"
-                        >
-                          <option value="PASSED">PASSED</option>
-                          <option value="FAILED">FAILED</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Cert / QA #</label>
-                        <input
-                          type="text"
-                          value={compQACertNumber}
-                          onChange={(e) => setCompQACertNumber(e.target.value)}
-                          placeholder="QA-CAL-2026-X"
-                          className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5">Findings / Tolerance</label>
-                      <input
-                        type="text"
-                        value={compQAFindings}
-                        onChange={(e) => setCompQAFindings(e.target.value)}
-                        placeholder="e.g. Deviation < 0.2mm across 50m bench; passed calibration"
-                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg"
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="text-[11px] text-emerald-800 leading-relaxed pt-1">
@@ -1874,93 +1680,6 @@ export const MaintenancePage: React.FC = () => {
                     : 'Save Progress'}
                 </span>
               )}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Record QA Inspection Modal */}
-      <Modal
-        isOpen={isQAModalOpen}
-        onClose={() => setIsQAModalOpen(false)}
-        title="Record Workshop QA Inspection Test"
-        subtitle={`Pre-requisite for completing ${activeTicket?.requestNumber}`}
-      >
-        <form onSubmit={handleRecordQA} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Test Result *</label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setQaPassed(true)}
-                className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 ${
-                  qaPassed ? 'bg-emerald-50 text-emerald-700 border-emerald-300 ring-2 ring-emerald-400/20' : 'bg-slate-50 text-slate-600'
-                }`}
-              >
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                PASSED QA
-              </button>
-              <button
-                type="button"
-                onClick={() => setQaPassed(false)}
-                className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 ${
-                  !qaPassed ? 'bg-rose-50 text-rose-700 border-rose-300 ring-2 ring-rose-400/20' : 'bg-slate-50 text-slate-600'
-                }`}
-              >
-                <AlertTriangle className="w-4 h-4 text-rose-600" />
-                FAILED QA
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Technical Findings *</label>
-            <textarea
-              required
-              rows={3}
-              value={qaFindings}
-              onChange={(e) => setQaFindings(e.target.value)}
-              placeholder="e.g. Laser EDM tested on calibration bench: 0.2 arc-sec accuracy confirmed"
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">QA / Certificate Number</label>
-            <input
-              type="text"
-              value={certNumber}
-              onChange={(e) => setCertNumber(e.target.value)}
-              placeholder="e.g. QA-PASS-2026-081"
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Remarks</label>
-            <input
-              type="text"
-              value={qaRemarks}
-              onChange={(e) => setQaRemarks(e.target.value)}
-              placeholder="e.g. Ready for field redeployment"
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none"
-            />
-          </div>
-
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setIsQAModalOpen(false)}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={recordingQA || !qaFindings.trim()}
-              className="px-5 py-2 text-xs font-bold text-white bg-purple-700 hover:bg-purple-800 rounded-xl transition-all shadow-sm disabled:opacity-50"
-            >
-              {recordingQA ? 'Recording...' : 'Save QA Inspection Test'}
             </button>
           </div>
         </form>

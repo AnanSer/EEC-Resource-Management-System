@@ -299,7 +299,6 @@ export const ResourceListPage: React.FC = () => {
             <option value="AVAILABLE">Available in Store</option>
             <option value="ASSIGNED">Assigned / In Use</option>
             <option value="MAINTENANCE">Maintenance</option>
-            <option value="TESTING">Testing / Inspection</option>
             <option value="RETIRED">Retired</option>
           </select>
 

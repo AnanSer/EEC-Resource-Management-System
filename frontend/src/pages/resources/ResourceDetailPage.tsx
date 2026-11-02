@@ -737,12 +737,11 @@ export const ResourceDetailPage: React.FC = () => {
               <option value="AVAILABLE">Available in Store</option>
               <option value="ASSIGNED" disabled>Assigned / In Field Use (Managed by Assignment Workflow)</option>
               <option value="MAINTENANCE" disabled>Under Maintenance (Managed by Maintenance Workflow)</option>
-              <option value="TESTING" disabled>Inspection / Testing (Managed by QA Workflow)</option>
               <option value="RETIRED">Retired / Decommissioned</option>
               <option value="DISPOSED">Disposed</option>
             </select>
             <p className="text-[11px] text-slate-500 mt-1">
-              Operational transitions to ASSIGNED, MAINTENANCE, and TESTING are managed by custody workflows. Direct registry changes support AVAILABLE, RETIRED, and DISPOSED.
+              Operational transitions to ASSIGNED and MAINTENANCE are managed by custody and maintenance workflows. Direct registry changes support AVAILABLE, RETIRED, and DISPOSED.
             </p>
           </div>
 
