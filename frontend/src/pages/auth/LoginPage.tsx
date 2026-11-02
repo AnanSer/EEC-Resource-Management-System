@@ -162,7 +162,12 @@ export const LoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* Quick Demo Pre-fill section */}
+          {/* 
+            TEMPORARY DEMONSTRATION CONTROLS (SEC-01):
+            Preserved strictly for executive demonstration to EEC management.
+            WARNING: These quick sign-in personas and shared demo credentials MUST be removed or disabled
+            before final public production launch.
+          */}
           <div className="mt-6 pt-6 border-t border-slate-100">
             <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />

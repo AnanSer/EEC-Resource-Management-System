@@ -232,6 +232,7 @@ router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
     const userRole = req.user!.role;
     const userDeptId = req.user!.departmentId;
     const userId = req.user!.id;
+    const userEmail = req.user!.email;
     const userEmployeeRecordId = req.user!.employeeRecordId;
 
     const employee = await prisma.employee.findFirst({
@@ -287,8 +288,12 @@ router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
         });
       }
     } else if (userRole === 'EMPLOYEE') {
-      const isSelf = employee.userId === userId || employee.id === userEmployeeRecordId;
-      if (!isSelf && employee.departmentId !== userDeptId) {
+      const isSelf =
+        employee.userId === userId ||
+        (Boolean(userEmployeeRecordId) && employee.id === userEmployeeRecordId) ||
+        (Boolean(userEmail) && employee.email === userEmail);
+
+      if (!isSelf) {
         return res.status(403).json({
           success: false,
           message: 'Forbidden: You do not have permission to view other employee records.',

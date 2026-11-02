@@ -217,8 +217,12 @@ router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
     }
 
     if (userRole === 'EMPLOYEE') {
-      const isOwner = reqItem.requesterId === user.id || reqItem.employeeId === user.employeeRecordId;
-      if (!isOwner && reqItem.departmentId !== userDeptId) {
+      const isOwner =
+        reqItem.requesterId === user.id ||
+        (Boolean(user.employeeRecordId) && reqItem.employeeId === user.employeeRecordId) ||
+        reqItem.employee?.userId === user.id;
+
+      if (!isOwner) {
         return res.status(403).json({
           success: false,
           message: 'Forbidden: You can only view your own requisitions',

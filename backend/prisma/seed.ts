@@ -2,8 +2,21 @@ import { seedResources } from './seed_resources';
 import prisma from '../src/lib/prisma';
 import { hashPassword } from '../src/auth/password';
 
+/**
+ * Strict production environment guard (SEC-02)
+ * Refuses execution if NODE_ENV is set to 'production'.
+ */
+export function assertSafeEnvironmentForSeeding(nodeEnv = process.env.NODE_ENV): void {
+  if (nodeEnv === 'production') {
+    throw new Error('CRITICAL: Database seeding is strictly forbidden in production mode (NODE_ENV=production). Seeding would risk creating demo accounts and corrupting production data.');
+  }
+}
+
 async function main() {
-  console.log('[EEC-RMS Seed] Starting database seeding for Departments, Users, and Employees...');
+  // 0. Enforce Production Guard
+  assertSafeEnvironmentForSeeding();
+
+  console.log('[EEC-RMS Seed] Starting safe database seeding for Departments, Users, and Employees...');
 
   const defaultPassword = 'EEC-Secure2026!';
   const passwordHash = await hashPassword(defaultPassword);
@@ -85,18 +98,17 @@ async function main() {
   ];
 
   for (const dept of departmentsData) {
-    const d = await prisma.department.upsert({
+    const existing = await prisma.department.findUnique({
       where: { code: dept.code },
-      update: {
-        name: dept.name,
-        description: dept.description,
-        managerName: dept.managerName,
-        location: dept.location,
-        budgetCode: dept.budgetCode,
-      },
-      create: dept,
     });
-    console.log(`[EEC-RMS Seed] Department seeded: ${d.code} - ${d.name} (${d.id})`);
+    if (!existing) {
+      const d = await prisma.department.create({
+        data: dept,
+      });
+      console.log(`[EEC-RMS Seed] Department created: ${d.code} - ${d.name} (${d.id})`);
+    } else {
+      console.log(`[EEC-RMS Seed] Preserving existing department: ${existing.code} - ${existing.name} (${existing.id})`);
+    }
   }
 
   // 2. Seed Users Connected to Departments
@@ -148,25 +160,27 @@ async function main() {
   const userMap: Record<string, string> = {};
 
   for (const u of seedUsers) {
-    const record = await prisma.user.upsert({
+    const existing = await prisma.user.findUnique({
       where: { email: u.email },
-      update: {
-        fullName: u.fullName,
-        role: u.role,
-        status: u.status,
-        departmentId: u.departmentId,
-      },
-      create: {
-        email: u.email,
-        fullName: u.fullName,
-        passwordHash,
-        role: u.role,
-        status: u.status,
-        departmentId: u.departmentId,
-      },
     });
-    userMap[record.email] = record.id;
-    console.log(`[EEC-RMS Seed] User seeded: ${record.email} (${record.role} in ${record.departmentId})`);
+
+    if (existing) {
+      userMap[existing.email] = existing.id;
+      console.log(`[EEC-RMS Seed] Preserving existing user: ${existing.email} (Role: ${existing.role}, Status: ${existing.status}) — credentials and configuration untouched.`);
+    } else {
+      const record = await prisma.user.create({
+        data: {
+          email: u.email,
+          fullName: u.fullName,
+          passwordHash,
+          role: u.role,
+          status: u.status,
+          departmentId: u.departmentId,
+        },
+      });
+      userMap[record.email] = record.id;
+      console.log(`[EEC-RMS Seed] User created: ${record.email} (${record.role} in ${record.departmentId})`);
+    }
   }
 
   // 3. Seed Employee Personnel Roster
@@ -278,40 +292,42 @@ async function main() {
   ];
 
   for (const emp of employeesData) {
-    const e = await prisma.employee.upsert({
+    const existingEmp = await prisma.employee.findUnique({
       where: { employeeId: emp.employeeId },
-      update: {
-        name: emp.name,
-        email: emp.email,
-        phone: emp.phone,
-        departmentId: emp.departmentId,
-        designation: emp.designation,
-        role: emp.role,
-        userId: emp.userId || null,
-      },
-      create: {
-        employeeId: emp.employeeId,
-        name: emp.name,
-        email: emp.email,
-        phone: emp.phone,
-        departmentId: emp.departmentId,
-        designation: emp.designation,
-        role: emp.role,
-        userId: emp.userId || null,
-      },
     });
-    console.log(`[EEC-RMS Seed] Employee seeded: ${e.employeeId} - ${e.name} (${e.departmentId})`);
+
+    if (existingEmp) {
+      console.log(`[EEC-RMS Seed] Preserving existing employee: ${existingEmp.employeeId} - ${existingEmp.name} (Role: ${existingEmp.role})`);
+    } else {
+      const e = await prisma.employee.create({
+        data: {
+          employeeId: emp.employeeId,
+          name: emp.name,
+          email: emp.email,
+          phone: emp.phone,
+          departmentId: emp.departmentId,
+          designation: emp.designation,
+          role: emp.role,
+          userId: emp.userId || null,
+        },
+      });
+      console.log(`[EEC-RMS Seed] Employee created: ${e.employeeId} - ${e.name} (${e.departmentId})`);
+    }
   }
 
   await seedResources();
   console.log('[EEC-RMS Seed] Seeding completed successfully.');
 }
 
-main()
-  .catch((e) => {
-    console.error('[EEC-RMS Seed] Seeding failed:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+export { main as seedDatabase };
+
+if (process.argv[1]?.endsWith('seed.ts') || process.argv[1]?.endsWith('seed.js')) {
+  main()
+    .catch((e) => {
+      console.error('[EEC-RMS Seed] Seeding failed:', e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}
