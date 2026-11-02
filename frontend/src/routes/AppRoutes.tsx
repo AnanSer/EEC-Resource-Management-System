@@ -25,19 +25,13 @@ import { LoginPage } from '../pages/auth/LoginPage';
 import { RegisterPage } from '../pages/auth/RegisterPage';
 import { ForgotPasswordPage } from '../pages/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from '../pages/auth/ResetPasswordPage';
+import { EECPreloader } from '../components/brand/EECPreloader';
 
 export const AppRoutes: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
-        <div className="w-10 h-10 border-4 border-eec-primary border-t-transparent rounded-full animate-spin mb-4" />
-        <p className="text-xs font-bold text-slate-700 tracking-wider uppercase">
-          Verifying EEC Security Credentials...
-        </p>
-      </div>
-    );
+    return <EECPreloader message="Verifying EEC Credentials" />;
   }
 
   return (

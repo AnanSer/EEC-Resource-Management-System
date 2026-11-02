@@ -13,3 +13,35 @@ body {
   background-color: #F4F8FA;
   color: #1E293B;
 }
+
+/* EEC Brand Preloader Keyframe Animations */
+@keyframes eec-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(60%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+@keyframes eec-soft-glow {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.04);
+  }
+}
+
+.animate-eec-shimmer {
+  animation: eec-shimmer 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-eec-glow {
+  animation: eec-soft-glow 3s ease-in-out infinite;
+}

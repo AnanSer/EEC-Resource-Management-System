@@ -62,7 +62,7 @@ export const ResetPasswordPage: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <div className="flex justify-center mb-4">
-          <EECLogo />
+          <EECLogo size="lg" />
         </div>
         <h2 className="text-2xl font-black text-slate-900 tracking-tight">
           Reset Your Password

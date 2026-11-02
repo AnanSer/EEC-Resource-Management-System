@@ -75,7 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
     >
       {/* Brand Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-slate-100 flex-shrink-0">
-        <EECLogo collapsed={collapsed} />
+        <EECLogo collapsed={collapsed} size="sm" showSubtext={!collapsed} />
         <button
           onClick={onToggle}
           className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors hidden md:block"

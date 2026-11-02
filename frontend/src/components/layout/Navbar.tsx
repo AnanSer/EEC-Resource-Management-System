@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { Link, useNavigate } from 'react-router-dom';
+import { EECLogo } from '../brand/EECLogo';
 import { 
   Bell, 
   Search, 
@@ -56,6 +57,10 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileSidebar }) => {
         >
           <Menu className="w-5 h-5" />
         </button>
+
+        <div className="md:hidden flex items-center">
+          <EECLogo size="xs" showSubtext={false} />
+        </div>
 
         <div className="relative w-full max-w-sm hidden sm:block">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
