@@ -74,43 +74,52 @@ export const resourceService = {
     }
   },
 
-  async create(resource: Omit<Resource, 'id' | 'createdAt' | 'updatedAt'>): Promise<Resource> {
+  async create(resource: Omit<Resource, 'id' | 'createdAt' | 'updatedAt' | 'itemCode'> & { itemCode?: string }): Promise<Resource> {
     try {
       const payload: Record<string, any> = {
         itemCode: resource.itemCode,
         name: resource.name,
         category: resource.category,
         subcategory: resource.subcategory,
-        departmentId: resource.currentDepartmentId,
+        departmentId: resource.currentDepartmentId || resource.departmentId,
         condition: resource.condition,
         location: resource.location,
         purchaseDate: resource.purchaseDate,
         purchaseCost: resource.purchaseCostETB,
+        purchaseCostETB: resource.purchaseCostETB,
+        currentValueETB: resource.currentValueETB,
+        warrantyExpiry: resource.warrantyExpiry,
         currency: 'ETB',
         supplier: resource.supplier,
+        description: resource.description,
         notes: resource.notes,
+        manufacturer: resource.manufacturer,
+        model: resource.model,
+        serialNumber: resource.serialNumber,
       };
 
       if (resource.vehicleSpecs) {
-        payload.manufacturer = resource.vehicleSpecs.make;
-        payload.model = resource.vehicleSpecs.model;
-        payload.serialNumber = resource.vehicleSpecs.chassisNumber;
+        payload.manufacturer = resource.manufacturer || resource.vehicleSpecs.make;
+        payload.model = resource.model || resource.vehicleSpecs.model;
+        payload.serialNumber = resource.serialNumber || resource.vehicleSpecs.chassisNumber;
         payload.specs = resource.vehicleSpecs;
       } else if (resource.itSpecs) {
-        payload.manufacturer = resource.itSpecs.brand;
-        payload.model = resource.itSpecs.model;
-        payload.serialNumber = resource.itSpecs.serialNumber;
+        payload.manufacturer = resource.manufacturer || resource.itSpecs.brand;
+        payload.model = resource.model || resource.itSpecs.model;
+        payload.serialNumber = resource.serialNumber || resource.itSpecs.serialNumber;
         payload.specs = resource.itSpecs;
       } else if (resource.machinerySpecs) {
-        payload.manufacturer = resource.machinerySpecs.make;
-        payload.model = resource.machinerySpecs.model;
-        payload.serialNumber = resource.machinerySpecs.serialNumber;
+        payload.manufacturer = resource.manufacturer || resource.machinerySpecs.make;
+        payload.model = resource.model || resource.machinerySpecs.model;
+        payload.serialNumber = resource.serialNumber || resource.machinerySpecs.serialNumber;
         payload.specs = resource.machinerySpecs;
       } else if (resource.surveyingSpecs) {
-        payload.manufacturer = resource.surveyingSpecs.make;
-        payload.model = resource.surveyingSpecs.model;
-        payload.serialNumber = resource.surveyingSpecs.serialNumber;
+        payload.manufacturer = resource.manufacturer || resource.surveyingSpecs.make;
+        payload.model = resource.model || resource.surveyingSpecs.model;
+        payload.serialNumber = resource.serialNumber || resource.surveyingSpecs.serialNumber;
         payload.specs = resource.surveyingSpecs;
+      } else if (resource.furnitureSpecs) {
+        payload.specs = resource.furnitureSpecs;
       }
 
       const res = await api.post('/resources', payload);
@@ -128,16 +137,29 @@ export const resourceService = {
       if (updates.category !== undefined) payload.category = updates.category;
       if (updates.subcategory !== undefined) payload.subcategory = updates.subcategory;
       if (updates.currentDepartmentId !== undefined) payload.departmentId = updates.currentDepartmentId;
+      if (updates.departmentId !== undefined) payload.departmentId = updates.departmentId;
       if (updates.condition !== undefined) payload.condition = updates.condition;
       if (updates.location !== undefined) payload.location = updates.location;
       if (updates.status !== undefined) payload.status = updates.status;
       if (updates.notes !== undefined) payload.notes = updates.notes;
-      if (updates.purchaseCostETB !== undefined) payload.purchaseCost = updates.purchaseCostETB;
+      if (updates.description !== undefined) payload.description = updates.description;
+      if (updates.manufacturer !== undefined) payload.manufacturer = updates.manufacturer;
+      if (updates.model !== undefined) payload.model = updates.model;
+      if (updates.serialNumber !== undefined) payload.serialNumber = updates.serialNumber;
+      if (updates.purchaseCostETB !== undefined) {
+        payload.purchaseCost = updates.purchaseCostETB;
+        payload.purchaseCostETB = updates.purchaseCostETB;
+      }
+      if (updates.currentValueETB !== undefined) payload.currentValueETB = updates.currentValueETB;
       if (updates.purchaseDate !== undefined) payload.purchaseDate = updates.purchaseDate;
+      if (updates.warrantyExpiry !== undefined) payload.warrantyExpiry = updates.warrantyExpiry;
       if (updates.supplier !== undefined) payload.supplier = updates.supplier;
 
       if (updates.vehicleSpecs) payload.specs = updates.vehicleSpecs;
       else if (updates.itSpecs) payload.specs = updates.itSpecs;
+      else if (updates.machinerySpecs) payload.specs = updates.machinerySpecs;
+      else if (updates.surveyingSpecs) payload.specs = updates.surveyingSpecs;
+      else if (updates.furnitureSpecs) payload.specs = updates.furnitureSpecs;
       else if (updates.machinerySpecs) payload.specs = updates.machinerySpecs;
       else if (updates.surveyingSpecs) payload.specs = updates.surveyingSpecs;
 

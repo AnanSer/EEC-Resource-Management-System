@@ -51,7 +51,7 @@ function formatResource(r: any) {
     department: r.department ? { id: r.department.id, name: r.department.name, code: r.department.code } : null,
     currentDepartmentId: r.departmentId,
     currentDepartmentName: r.department?.name || 'Central Warehouse',
-    currentAssigneeId: r.currentAssigneeId || undefined,
+    currentAssigneeId: r.currentAssigneeId || null,
     currentAssigneeName: r.currentAssignee?.name || undefined,
     currentAssigneeEmployeeId: r.currentAssignee?.employeeId || undefined,
     assignedAt: r.assignedAt ? r.assignedAt.toISOString() : undefined,
@@ -66,6 +66,7 @@ function formatResource(r: any) {
   };
 
   if (r.specs && typeof r.specs === 'object') {
+    formatted.specs = r.specs;
     if (r.category === 'IT_EQUIPMENT') {
       formatted.itSpecs = r.specs;
     } else if (r.category === 'VEHICLES') {
@@ -74,6 +75,8 @@ function formatResource(r: any) {
       formatted.machinerySpecs = r.specs;
     } else if (r.category === 'SURVEYING_GEOTECHNICAL') {
       formatted.surveyingSpecs = r.specs;
+    } else if (r.category === 'CAMP_FACILITY_FURNITURE') {
+      formatted.furnitureSpecs = r.specs;
     }
   }
 
@@ -560,6 +563,48 @@ router.get('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
 
 
 
+const CATEGORY_CODE_PREFIX: Record<string, string> = {
+  IT_EQUIPMENT: 'EEC-IT',
+  VEHICLES: 'EEC-VEHC',
+  HEAVY_MACHINERY: 'EEC-MACH',
+  SURVEYING_GEOTECHNICAL: 'EEC-SURV',
+  CAMP_FACILITY_FURNITURE: 'EEC-FURN',
+  OTHER: 'EEC-RES',
+};
+
+async function generateNextItemCode(category: string): Promise<string> {
+  const prefix = CATEGORY_CODE_PREFIX[category] || 'EEC-RES';
+  const year = new Date().getFullYear();
+  const prefixYear = `${prefix}-${year}`;
+
+  const existing = await prisma.resource.findMany({
+    where: {
+      itemCode: { startsWith: `${prefixYear}-` },
+    },
+    select: { itemCode: true },
+  });
+
+  const existingCodes = new Set(existing.map((r) => r.itemCode.toUpperCase()));
+  let maxSeq = 0;
+  for (const r of existing) {
+    const parts = r.itemCode.split('-');
+    const lastPart = parts[parts.length - 1];
+    const num = parseInt(lastPart, 10);
+    if (!isNaN(num) && num > maxSeq) {
+      maxSeq = num;
+    }
+  }
+
+  let candidateSeq = Math.max(maxSeq + 1, 1);
+  let candidateCode = `${prefixYear}-${String(candidateSeq).padStart(3, '0')}`;
+  while (existingCodes.has(candidateCode)) {
+    candidateSeq++;
+    candidateCode = `${prefixYear}-${String(candidateSeq).padStart(3, '0')}`;
+  }
+
+  return candidateCode;
+}
+
 router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
   try {
     const userRole = req.user!.role;
@@ -572,7 +617,6 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
         message: 'Forbidden: You do not have permission to register new assets in the registry',
       });
     }
-
 
     const {
       itemCode,
@@ -597,8 +641,8 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       vehicleSpecs,
       machinerySpecs,
       surveyingSpecs,
+      furnitureSpecs,
     } = req.body || {};
-
 
     if (!name || typeof name !== 'string' || name.trim().length < 2) {
       return res.status(400).json({
@@ -607,14 +651,12 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       });
     }
 
-
     if (!category || !VALID_CATEGORIES.includes(category)) {
       return res.status(400).json({
         success: false,
         message: `Invalid resource category '${category}'. Must be one of: [${VALID_CATEGORIES.join(', ')}]`,
       });
     }
-
 
     let targetDeptId = departmentId;
     if (userRole === 'DEPARTMENT_MANAGER') {
@@ -633,7 +675,6 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       targetDeptId = userDeptId;
     }
 
-
     if (!targetDeptId) {
       return res.status(400).json({
         success: false,
@@ -649,70 +690,179 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
       });
     }
 
-
-    let finalCode = itemCode ? String(itemCode).trim().toUpperCase() : '';
-    if (!finalCode) {
-      const prefix =
-        category === 'IT_EQUIPMENT' ? 'EEC-IT' :
-        category === 'VEHICLES' ? 'EEC-VEHC' :
-        category === 'HEAVY_MACHINERY' ? 'EEC-MACH' :
-        category === 'SURVEYING_GEOTECHNICAL' ? 'EEC-SURV' :
-        category === 'CAMP_FACILITY_FURNITURE' ? 'EEC-FURN' : 'EEC-RES';
-      const year = new Date().getFullYear();
-      const rand = Math.floor(1000 + Math.random() * 9000);
-      finalCode = `${prefix}-${year}-${rand}`;
-    }
-
-
-    const existingCode = await prisma.resource.findUnique({ where: { itemCode: finalCode } });
-    if (existingCode) {
-      return res.status(409).json({
-        success: false,
-        message: `Resource with asset code '${finalCode}' already exists in registry`,
-      });
-    }
-
-
+    // Protect Custody and Status: New resources must ALWAYS start as AVAILABLE
     const reqHighStatus = req.body.status;
-    if (reqHighStatus && reqHighStatus !== 'AVAILABLE' && reqHighStatus !== 'RETIRED') {
+    if (reqHighStatus && reqHighStatus !== 'AVAILABLE') {
       return res.status(400).json({
         success: false,
-        message: 'New assets may only be registered with AVAILABLE status. Assignment or Maintenance statuses require their respective workflows.',
+        message: 'New resources must always be registered with AVAILABLE status. Custody assignment and maintenance must follow their respective corporate workflows.',
       });
     }
 
+    // Validate Cost Values
+    const rawCost = purchaseCostETB !== undefined ? purchaseCostETB : req.body.purchaseCost;
+    let parsedCost = 0;
+    if (rawCost !== undefined && rawCost !== null && rawCost !== '') {
+      parsedCost = Number(rawCost);
+      if (isNaN(parsedCost) || parsedCost < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Purchase cost must be a valid non-negative number',
+        });
+      }
+    }
+
+    const rawCurrentValue = currentValueETB !== undefined ? currentValueETB : req.body.currentValue;
+    let parsedCurrentValue = parsedCost;
+    if (rawCurrentValue !== undefined && rawCurrentValue !== null && rawCurrentValue !== '') {
+      parsedCurrentValue = Number(rawCurrentValue);
+      if (isNaN(parsedCurrentValue) || parsedCurrentValue < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current asset value must be a valid non-negative number',
+        });
+      }
+    }
+
+    // Validate Dates
+    let parsedPurchaseDate: Date = new Date();
+    if (purchaseDate) {
+      const parsed = new Date(purchaseDate);
+      if (isNaN(parsed.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid purchase date format',
+        });
+      }
+      parsedPurchaseDate = parsed;
+    }
+
+    let parsedWarrantyExpiry: Date | null = null;
+    if (warrantyExpiry) {
+      const parsed = new Date(warrantyExpiry);
+      if (isNaN(parsed.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid warranty expiry date format',
+        });
+      }
+      parsedWarrantyExpiry = parsed;
+    }
+
+    // Determine Effective Serial Number
+    const rawSerial = serialNumber !== undefined && serialNumber !== null ? String(serialNumber).trim() : '';
+    const specsSerial = specs?.serialNumber || itSpecs?.serialNumber || machinerySpecs?.serialNumber || surveyingSpecs?.serialNumber;
+    const rawSpecsSerial = specsSerial !== undefined && specsSerial !== null ? String(specsSerial).trim() : '';
+    const specsChassis = specs?.chassisNumber || vehicleSpecs?.chassisNumber;
+    const rawChassis = specsChassis !== undefined && specsChassis !== null ? String(specsChassis).trim() : '';
+
+    const effectiveSerial = rawSerial || rawSpecsSerial || rawChassis || null;
+
+    // Prevent duplicate serial numbers when provided
+    if (effectiveSerial) {
+      const existingWithSerial = await prisma.resource.findFirst({
+        where: {
+          status: { not: 'DISPOSED' },
+          serialNumber: { equals: effectiveSerial, mode: 'insensitive' },
+        },
+        select: { id: true, itemCode: true, name: true, serialNumber: true },
+      });
+
+      if (existingWithSerial) {
+        return res.status(409).json({
+          success: false,
+          message: `A resource with serial number '${effectiveSerial}' already exists in registry (${existingWithSerial.itemCode} - ${existingWithSerial.name})`,
+        });
+      }
+    }
+
+    if (rawChassis && effectiveSerial && rawChassis.toLowerCase() !== effectiveSerial.toLowerCase()) {
+      const existingWithChassis = await prisma.resource.findFirst({
+        where: {
+          status: { not: 'DISPOSED' },
+          serialNumber: { equals: rawChassis, mode: 'insensitive' },
+        },
+        select: { id: true, itemCode: true, name: true, serialNumber: true },
+      });
+
+      if (existingWithChassis) {
+        return res.status(409).json({
+          success: false,
+          message: `A resource with chassis number '${rawChassis}' already exists in registry (${existingWithChassis.itemCode} - ${existingWithChassis.name})`,
+        });
+      }
+    }
 
     const finalCondition = condition && VALID_CONDITIONS.includes(condition) ? condition : 'EXCELLENT';
-    const combinedSpecs = specs || itSpecs || vehicleSpecs || machinerySpecs || surveyingSpecs || null;
+    const combinedSpecs = specs || itSpecs || vehicleSpecs || machinerySpecs || surveyingSpecs || furnitureSpecs || null;
 
+    // Auto Item Code Generation with retry loop to guarantee uniqueness under concurrency
+    const MAX_CREATION_ATTEMPTS = 10;
+    let created: any = null;
 
-    const created = await prisma.resource.create({
-      data: {
-        itemCode: finalCode,
-        name: name.trim(),
-        category,
-        subcategory: subcategory ? subcategory.trim() : null,
-        description: description ? description.trim() : null,
-        manufacturer: manufacturer ? manufacturer.trim() : null,
-        model: model ? model.trim() : null,
-        serialNumber: serialNumber ? serialNumber.trim() : null,
-        status: reqHighStatus || 'AVAILABLE',
-        condition: finalCondition,
-        location: location ? location.trim() : 'Central Store - Kersa',
-        departmentId: targetDeptId,
-        purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
-        purchaseCostETB: purchaseCostETB ? Number(purchaseCostETB) : 0,
-        currentValueETB: currentValueETB ? Number(currentValueETB) : (purchaseCostETB ? Number(purchaseCostETB) : 0),
-        warrantyExpiry: warrantyExpiry ? new Date(warrantyExpiry) : null,
-        supplier: supplier ? supplier.trim() : null,
-        notes: notes ? notes.trim() : null,
-        specs: combinedSpecs,
-      },
-      include: {
-        department: true,
-        currentAssignee: true,
-      },
-    });
+    for (let attempt = 0; attempt < MAX_CREATION_ATTEMPTS; attempt++) {
+      try {
+        let finalCode = itemCode && attempt === 0 ? String(itemCode).trim().toUpperCase() : '';
+        if (!finalCode) {
+          finalCode = await generateNextItemCode(category);
+        }
+
+        const existingCode = await prisma.resource.findUnique({ where: { itemCode: finalCode } });
+        if (existingCode) {
+          if (itemCode && attempt === 0) {
+            return res.status(409).json({
+              success: false,
+              message: `Resource with asset code '${finalCode}' already exists in registry`,
+            });
+          }
+          // Collision on auto-generated code; retry with next sequence
+          continue;
+        }
+
+        created = await prisma.resource.create({
+          data: {
+            itemCode: finalCode,
+            name: name.trim(),
+            category,
+            subcategory: subcategory ? subcategory.trim() : null,
+            description: description ? description.trim() : null,
+            manufacturer: manufacturer ? manufacturer.trim() : null,
+            model: model ? model.trim() : null,
+            serialNumber: effectiveSerial,
+            status: 'AVAILABLE',
+            condition: finalCondition,
+            location: location && typeof location === 'string' && location.trim() ? location.trim() : 'Central Store - Kersa',
+            departmentId: targetDeptId,
+            currentAssigneeId: null, // New resources never have an initial custodian
+            purchaseDate: parsedPurchaseDate,
+            purchaseCostETB: parsedCost,
+            currentValueETB: parsedCurrentValue,
+            warrantyExpiry: parsedWarrantyExpiry,
+            supplier: supplier ? supplier.trim() : null,
+            notes: notes ? notes.trim() : null,
+            specs: combinedSpecs,
+          },
+          include: {
+            department: true,
+            currentAssignee: true,
+          },
+        });
+        break;
+      } catch (createErr: any) {
+        if (createErr?.code === 'P2002' && attempt < MAX_CREATION_ATTEMPTS - 1) {
+          // Unique constraint collision on itemCode under concurrency; retry next sequence
+          continue;
+        }
+        throw createErr;
+      }
+    }
+
+    if (!created) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate a unique asset code after multiple attempts. Please retry.',
+      });
+    }
 
     await recordAuditEvent(prisma, {
       actionType: 'RESOURCE_REGISTERED',
@@ -854,8 +1004,25 @@ router.put('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
       }
     }
 
+    if (serialNumber !== undefined && serialNumber !== null && String(serialNumber).trim() !== '') {
+      const cleanSerial = String(serialNumber).trim();
+      const dupSerial = await prisma.resource.findFirst({
+        where: {
+          id: { not: existing.id },
+          status: { not: 'DISPOSED' },
+          serialNumber: { equals: cleanSerial, mode: 'insensitive' },
+        },
+        select: { id: true, itemCode: true, name: true },
+      });
+      if (dupSerial) {
+        return res.status(409).json({
+          success: false,
+          message: `A resource with serial number '${cleanSerial}' already exists in registry (${dupSerial.itemCode} - ${dupSerial.name})`,
+        });
+      }
+    }
 
-    const combinedSpecs = specs || itSpecs || vehicleSpecs || machinerySpecs || surveyingSpecs || undefined;
+    const combinedSpecs = specs || itSpecs || vehicleSpecs || machinerySpecs || surveyingSpecs || req.body.furnitureSpecs || undefined;
 
     const updateData: any = {};
     if (name !== undefined) updateData.name = name.trim();
@@ -870,13 +1037,59 @@ router.put('/:id', requireAuth, async (req: AppRequest, res: AppResponse) => {
     if (condition !== undefined && VALID_CONDITIONS.includes(condition)) updateData.condition = condition;
     if (location !== undefined) updateData.location = location ? location.trim() : existing.location;
     if (departmentId !== undefined) updateData.departmentId = departmentId;
-    if (purchaseDate !== undefined) updateData.purchaseDate = purchaseDate ? new Date(purchaseDate) : null;
-    if (purchaseCostETB !== undefined) updateData.purchaseCostETB = Number(purchaseCostETB);
-    if (currentValueETB !== undefined) updateData.currentValueETB = Number(currentValueETB);
-    if (warrantyExpiry !== undefined) updateData.warrantyExpiry = warrantyExpiry ? new Date(warrantyExpiry) : null;
     if (supplier !== undefined) updateData.supplier = supplier ? supplier.trim() : null;
     if (notes !== undefined) updateData.notes = notes ? notes.trim() : null;
     if (combinedSpecs !== undefined) updateData.specs = combinedSpecs;
+
+    const costInput = purchaseCostETB !== undefined ? purchaseCostETB : req.body.purchaseCost;
+    if (costInput !== undefined && costInput !== null && costInput !== '') {
+      const numCost = Number(costInput);
+      if (isNaN(numCost) || numCost < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Purchase cost must be a valid non-negative number',
+        });
+      }
+      updateData.purchaseCostETB = numCost;
+    }
+
+    const currentValInput = currentValueETB !== undefined ? currentValueETB : req.body.currentValue;
+    if (currentValInput !== undefined && currentValInput !== null && currentValInput !== '') {
+      const numVal = Number(currentValInput);
+      if (isNaN(numVal) || numVal < 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Current value must be a valid non-negative number',
+        });
+      }
+      updateData.currentValueETB = numVal;
+    }
+
+    if (purchaseDate !== undefined && purchaseDate !== null && purchaseDate !== '') {
+      const pDate = new Date(purchaseDate);
+      if (isNaN(pDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid purchase date format',
+        });
+      }
+      updateData.purchaseDate = pDate;
+    } else if (purchaseDate === null) {
+      updateData.purchaseDate = null;
+    }
+
+    if (warrantyExpiry !== undefined && warrantyExpiry !== null && warrantyExpiry !== '') {
+      const wDate = new Date(warrantyExpiry);
+      if (isNaN(wDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid warranty expiry date format',
+        });
+      }
+      updateData.warrantyExpiry = wDate;
+    } else if (warrantyExpiry === null) {
+      updateData.warrantyExpiry = null;
+    }
 
     const updated = await prisma.resource.update({
       where: { id: existing.id },

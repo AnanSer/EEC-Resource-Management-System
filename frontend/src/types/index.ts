@@ -214,6 +214,14 @@ export interface SurveyingSpecs {
   laserClass?: string;
 }
 
+export interface FurnitureSpecs {
+  itemType?: string; // Desk, Chair, Conference Table, File Cabinet, Site Bed, etc.
+  material?: string; // Wood, Steel, Ergonomic Mesh, Leather, Plastic, etc.
+  dimensions?: string; // e.g. 160x80x75 cm
+  color?: string; // e.g. Walnut, Black, Grey
+  [key: string]: any;
+}
+
 export interface Resource {
   id: string;
   itemCode: string; // e.g. EEC-IT-2024-0012
@@ -238,11 +246,16 @@ export interface Resource {
   supplier?: string;
   qrCodeUrl?: string;
   notes?: string;
+  manufacturer?: string;
+  model?: string;
+  warrantyExpiry?: string;
+  description?: string;
   // Polymorphic specs
   itSpecs?: ITSpecs;
   vehicleSpecs?: VehicleSpecs;
   machinerySpecs?: HeavyMachinerySpecs;
   surveyingSpecs?: SurveyingSpecs;
+  furnitureSpecs?: FurnitureSpecs;
   historicalContext?: HistoricalAssignmentContext;
   createdAt: string;
   updatedAt: string;
