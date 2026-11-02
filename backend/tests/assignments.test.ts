@@ -361,6 +361,25 @@ async function runTests() {
     const transferRecords = await prisma.custodyTransfer.findMany({ where: { resourceId: testResTid.id } });
     assert(transferRecords.length === 1, 'CustodyTransfer record successfully created');
 
+    // Verify new custodian received notification
+    const newCustodianUserId = await prisma.employee.findUnique({ where: { id: empIct!.id } }).then((e) => e?.userId);
+    if (newCustodianUserId) {
+      const newCustodianNotif = await prisma.notification.findFirst({
+        where: {
+          recipientId: newCustodianUserId,
+          type: 'ASSIGNMENT',
+          title: { contains: 'Custody Transferred' },
+          relatedEntityId: testResTid.id,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      assert(!!newCustodianNotif, 'New custodian received Custody Transferred notification');
+      assert(
+        newCustodianNotif?.actionUrl === '/profile',
+        'Custody Transferred notification actionUrl navigates to /profile for personal custody view'
+      );
+    }
+
     // 9. Return Workflow
     console.log('\n--- 9. Asset Return Workflow ---');
     // Cannot return an unassigned resource
@@ -386,6 +405,25 @@ async function runTests() {
     assert(validReturn.body.resource.status === 'AVAILABLE', 'Resource status reset to AVAILABLE');
     assert(validReturn.body.assignment.status === 'RETURNED', 'Active assignment marked RETURNED');
     assert(validReturn.body.assignment.isCurrent === false, 'Assignment marked isCurrent: false');
+
+    // Verify custodian received return confirmation notification
+    const custodianUserId = await prisma.employee.findUnique({ where: { id: empIct!.id } }).then((e) => e?.userId);
+    if (custodianUserId) {
+      const returnConfirmNotif = await prisma.notification.findFirst({
+        where: {
+          recipientId: custodianUserId,
+          type: 'ASSIGNMENT',
+          title: { contains: 'Resource Return Confirmed' },
+          relatedEntityId: testResTid.id,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      assert(!!returnConfirmNotif, 'Custodian received Resource Return Confirmed notification');
+      assert(
+        returnConfirmNotif?.actionUrl === '/profile',
+        'Return Confirmation notification actionUrl navigates to /profile for personal custody history'
+      );
+    }
 
     // Verify DB state after return
     const returnedDbRes = await prisma.resource.findUnique({ where: { id: testResTid.id } });

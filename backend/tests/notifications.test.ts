@@ -511,6 +511,10 @@ async function runTests() {
     });
     assert(!!empAsgnNotif, 'Receiving employee received Asset Assigned notification');
     if (empAsgnNotif) createdNotificationIds.push(empAsgnNotif.id);
+    assert(
+      empAsgnNotif?.actionUrl === '/profile',
+      'Asset Assigned notification actionUrl navigates to /profile for personal custody view'
+    );
 
     // 12.2 Custody Return
     const returnRes = await request('POST', '/api/assignments/return', {

@@ -880,7 +880,7 @@ router.post('/', requireAuth, async (req: AppRequest, res: AppResponse) => {
         message: `You have been assigned '${resource.name}' (${resource.itemCode}) for: ${purpose.trim()}.`,
         type: 'ASSIGNMENT',
         priority: 'NORMAL',
-        actionUrl: '/resources',
+        actionUrl: '/profile',
         relatedEntityType: 'RESOURCE',
         relatedEntityId: resource.id,
       });
@@ -1176,7 +1176,7 @@ router.post('/transfer', requireAuth, async (req: AppRequest, res: AppResponse) 
         message: `Custody of '${resource.name}' (${resource.itemCode}) has been transferred to you from ${currentAssignment.employee.name}.`,
         type: 'ASSIGNMENT',
         priority: 'NORMAL',
-        actionUrl: '/resources',
+        actionUrl: '/profile',
         relatedEntityType: 'RESOURCE',
         relatedEntityId: resource.id,
       });
@@ -1191,7 +1191,7 @@ router.post('/transfer', requireAuth, async (req: AppRequest, res: AppResponse) 
         message: `Custody of '${resource.name}' (${resource.itemCode}) was transferred to ${toEmployee.name}.`,
         type: 'ASSIGNMENT',
         priority: 'NORMAL',
-        actionUrl: '/resources',
+        actionUrl: '/profile',
         relatedEntityType: 'RESOURCE',
         relatedEntityId: resource.id,
       });
@@ -1505,7 +1505,7 @@ router.post('/return', requireAuth, async (req: AppRequest, res: AppResponse) =>
         message: `Return of '${targetResource.name}' (${targetResource.itemCode}) has been received and confirmed in store.`,
         type: 'ASSIGNMENT',
         priority: 'NORMAL',
-        actionUrl: '/resources',
+        actionUrl: '/profile',
         relatedEntityType: 'RESOURCE',
         relatedEntityId: targetResource.id,
       });
