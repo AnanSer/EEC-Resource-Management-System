@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "EEC Resource Management System (RMS) - Native Node.js HTTP Backend (Framework-Free)",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "prisma generate && tsc",
@@ -26,13 +29,13 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "dotenv": "^16.4.7",
-    "nodemailer": "^10.3.1"
+    "nodemailer": "^10.3.1",
+    "prisma": "^5.22.0",
+    "typescript": "5.7.2"
   },
   "devDependencies": {
     "@types/node": "^20.17.10",
     "@types/nodemailer": "^8.0.2",
-    "prisma": "^5.22.0",
-    "tsx": "^4.19.2",
-    "typescript": "5.7.2"
+    "tsx": "^4.19.2"
   }
 }
